@@ -104,9 +104,10 @@ class MarkNotesFlowTest {
     @Test
     fun enterContinuesChecklistAndToolbarFormats() {
         compose.onNodeWithTag(NEW_NOTE_FAB_TAG).performClick()
+        compose.waitUntilExactlyOneExists(hasSetTextAction(), timeoutMillis = 5_000)
         compose.onNode(hasSetTextAction()).performTextInput("Todo")
         compose.onNodeWithText("OK").performClick()
-        compose.waitUntilExactlyOneExists(hasTestTag(EDITOR_FIELD_TAG))
+        compose.waitUntilExactlyOneExists(hasTestTag(EDITOR_FIELD_TAG), timeoutMillis = 5_000)
 
         val editor = compose.onNodeWithTag(EDITOR_FIELD_TAG)
         compose.onNodeWithContentDescription("Checkbox").performClick()
