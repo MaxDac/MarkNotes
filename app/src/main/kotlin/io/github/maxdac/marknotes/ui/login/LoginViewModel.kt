@@ -50,9 +50,8 @@ class LoginViewModel(private val container: AppContainer) : ViewModel() {
         }
         password = ""
         pendingSession = null
-        container.syncManager.onLoggedIn(session.copy(keyPassphrases = passphrases))
+        container.proton.onLoggedIn(session.copy(keyPassphrases = passphrases))
         _state.value = _state.value.copy(done = true)
-        container.syncManager.syncNow()
     }
 
     private fun launchAction(block: suspend () -> Unit) {

@@ -39,6 +39,15 @@ interface RemoteDriveStore {
 
     /** Moves the entry to the remote trash. */
     suspend fun delete(entry: RemoteEntry)
+
+    /**
+     * Reads the [SyncManifest] file ([SyncManifest.PATH], hidden from [snapshot]); null when missing.
+     * Stores that can't access hidden files keep the default and simply don't use a manifest.
+     */
+    suspend fun readManifest(): ByteArray? = null
+
+    /** Creates or overwrites the [SyncManifest] file. */
+    suspend fun writeManifest(bytes: ByteArray) = Unit
 }
 
 class RemoteUnavailableException(message: String, cause: Throwable? = null) : Exception(message, cause)

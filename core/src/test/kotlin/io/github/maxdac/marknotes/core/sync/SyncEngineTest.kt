@@ -146,7 +146,7 @@ class SyncEngineTest {
         remote.putFile("n.md", "remote")
 
         val conflict = syncClean().conflicts.single()
-        engine.resolve(conflict, ConflictResolution.KEEP_LOCAL)
+        engine.resolve(conflict, ConflictResolution.KeepLocal)
 
         assertEquals("local", local.read("n.md"))
         assertEquals("local", remote.content("n.md"))
@@ -161,7 +161,7 @@ class SyncEngineTest {
         remote.putFile("n.md", "remote")
 
         val conflict = syncClean().conflicts.single()
-        engine.resolve(conflict, ConflictResolution.KEEP_REMOTE)
+        engine.resolve(conflict, ConflictResolution.KeepRemote)
 
         assertEquals("remote", local.read("n.md"))
         assertEquals("remote", remote.content("n.md"))
@@ -176,7 +176,7 @@ class SyncEngineTest {
         remote.putFile("dir/n.md", "remote")
 
         val conflict = syncClean().conflicts.single()
-        engine.resolve(conflict, ConflictResolution.KEEP_BOTH)
+        engine.resolve(conflict, ConflictResolution.KeepBoth)
 
         val copy = "dir/n${SyncEngine.CONFLICT_SUFFIX}.md"
         assertEquals("local", local.read("dir/n.md"))
@@ -293,5 +293,77 @@ class SyncEngineTest {
 
         assertEquals(1, syncClean().conflicts.size)
         assertEquals(1, syncClean().conflicts.size)
+    }
+
+    @Test
+    fun nonOverlappingEditsOnBothSidesAreMergedAutomatically() = runTest {
+        local.write("n.md", "a\nb\nc\n")
+        syncClean()
+        local.write("n.md", "A\nb\nc\n")
+        remote.putFile("n.md", "a\nb\nC\n")
+
+        val result = syncClean()
+
+        assertEquals(1, result.merged)
+        assertTrue(result.conflicts.isEmpty())
+        assertEquals("A\nb\nC\n", local.read("n.md"))
+        assertEquals("A\nb\nC\n", remote.content("n.md"))
+        assertStable()
+    }
+
+    @Test
+    fun conflictCarriesBaseAndMergedResolutionIsSavedOnBothSides() = runTest {
+        local.write("n.md", "a\nb\n")
+        syncClean()
+        local.write("n.md", "a\nlocal\n")
+        remote.putFile("n.md", "a\nremote\n")
+
+        val conflict = syncClean().conflicts.single()
+        assertEquals("a\nb\n", conflict.baseText)
+        assertEquals(1, conflict.merge.conflicts.size)
+
+        engine.resolve(conflict, ConflictResolution.Merged("a\nlocal and remote\n"))
+
+        assertEquals("a\nlocal and remote\n", local.read("n.md"))
+        assertEquals("a\nlocal and remote\n", remote.content("n.md"))
+        assertStable()
+    }
+
+    @Test
+    fun manifestDescribesSyncedNotesAndIsOnlyRewrittenOnChange() = runTest {
+        local.write("a/n.md", "x")
+        syncClean()
+
+        val manifest = SyncManifest.parse(remote.manifest!!.toString(Charsets.UTF_8))!!
+        assertEquals(setOf("a/n.md"), manifest.files.keys)
+        assertEquals(Hashing.sha256Hex("x".toByteArray()), manifest.files.getValue("a/n.md").sha256)
+        assertEquals(1, remote.manifestWrites)
+
+        syncClean()
+        assertEquals(1, remote.manifestWrites)
+
+        local.write("a/n.md", "y")
+        syncClean()
+        assertEquals(2, remote.manifestWrites)
+    }
+
+    @Test
+    fun manifestAvoidsDownloadingNotesThatAreAlreadyIdentical() = runTest {
+        local.write("n.md", "same")
+        syncClean()
+        // A second device with the same note connects the same drive.
+        val otherDir = Files.createTempDirectory("other").toFile()
+        try {
+            val other = LocalNoteStore(otherDir)
+            other.write("n.md", "same")
+            remote.calls.clear()
+
+            val result = SyncEngine(other, remote, InMemorySyncMetadataStore()) { 2000L }.sync()
+
+            assertTrue(result.conflicts.isEmpty())
+            assertEquals(emptyList<String>(), remote.calls)
+        } finally {
+            otherDir.deleteRecursively()
+        }
     }
 }

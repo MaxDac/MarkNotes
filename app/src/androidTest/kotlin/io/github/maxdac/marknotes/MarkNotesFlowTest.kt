@@ -17,6 +17,7 @@ import io.github.maxdac.marknotes.ui.browser.NEW_NOTE_FAB_TAG
 import io.github.maxdac.marknotes.ui.editor.EDITOR_FIELD_TAG
 import io.github.maxdac.marknotes.ui.editor.PREVIEW_TAG
 import io.github.maxdac.marknotes.ui.login.THIRD_PARTY_DISCLAIMER
+import io.github.maxdac.marknotes.ui.settings.NO_DRIVES_TEXT
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -118,15 +119,16 @@ class MarkNotesFlowTest {
     }
 
     @Test
-    fun settingsAndLoginShowThirdPartyDisclaimer() {
+    fun settingsAndAddDriveShowProviders() {
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Not logged in. Notes are only stored on this device.").assertExists()
+        compose.onNodeWithText(NO_DRIVES_TEXT).assertExists()
         compose.onNodeWithText(THIRD_PARTY_DISCLAIMER).assertExists()
+        compose.onNodeWithText("System").assertExists()
+        compose.onNodeWithText("Dark").assertExists()
 
-        compose.onNodeWithText("Log in").performClick()
-        compose.onNodeWithText("Proton Drive login").assertExists()
-        compose.onNodeWithText(THIRD_PARTY_DISCLAIMER).assertExists()
-        compose.onNodeWithText("Username or email").assertExists()
-        compose.onNodeWithText("Password").assertExists()
+        compose.onNodeWithText("Add drive").performClick()
+        compose.onNodeWithText("Proton Drive").assertExists()
+        compose.onNodeWithText("Dropbox").assertExists()
+        compose.onNodeWithText("OneDrive").assertExists()
     }
 }

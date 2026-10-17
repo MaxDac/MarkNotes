@@ -81,4 +81,15 @@ class FakeRemoteDriveStore : RemoteDriveStore {
         calls += "delete:${entry.path}"
         remove(entry.path)
     }
+
+    var manifest: ByteArray? = null
+    var manifestWrites = 0
+        private set
+
+    override suspend fun readManifest(): ByteArray? = manifest
+
+    override suspend fun writeManifest(bytes: ByteArray) {
+        manifest = bytes
+        manifestWrites++
+    }
 }
