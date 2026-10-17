@@ -18,12 +18,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.10.2"
       - name: Assemble debug and run unit tests
-        run: gradle assembleDebug test --stacktrace
+        run: ./gradlew assembleDebug test --stacktrace
 
   proton-sdk:
     name: Proton Drive SDK module (experimental)
@@ -36,9 +33,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.10.2"
       - name: Assemble with the Proton Drive SDK
-        run: gradle :app:assembleDebug -Pmarknotes.protonSdk=true --stacktrace
+        run: ./gradlew :app:assembleDebug -Pmarknotes.protonSdk=true --stacktrace

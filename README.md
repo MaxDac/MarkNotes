@@ -37,11 +37,9 @@ The sync engine only talks to the `RemoteDriveStore` interface, so SDK changes s
 
 ## Build
 
-Requirements: JDK 17, Android SDK (compile SDK 35), Gradle 8.10.2. The repository doesn't include the
-Gradle wrapper yet; generate it once with a local Gradle install:
+Requirements: JDK 17 and the Android SDK (compile SDK 35). The Gradle wrapper (8.10.2) is included:
 
 ```sh
-gradle wrapper --gradle-version 8.10.2
 ./gradlew assembleDebug test
 ```
 
