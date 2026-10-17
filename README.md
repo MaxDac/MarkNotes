@@ -44,7 +44,7 @@ Out of scope: search, tags, attachments, background sync, widgets, local encrypt
 | --- | --- |
 | `:core` | Pure Kotlin/JVM: local note store, three-way merge, sync engine (single and multi-drive), `RemoteDriveStore` interface, OneDrive (Microsoft Graph) store, Proton SRP + auth client. Fully unit tested. |
 | `:app` | Android app: Jetpack Compose + Material 3, Navigation Compose, MVVM with `StateFlow`, Room (drive accounts and sync metadata), manual DI, Dropbox store, Dropbox/MSAL sign-in. |
-| `:proton-drive` | Optional bridge to the experimental [Proton Drive SDK](https://github.com/ProtonDriveApps/sdk). Only included with `-Pmarknotes.protonSdk=true`. |
+| `:proton-drive` | Proton Drive store built on the [Proton Drive SDK](https://github.com/ProtonDriveApps/sdk), plus the protoncore network stack and address-key resolvers it needs. Always included. |
 
 The sync engine only talks to the `RemoteDriveStore` interface, so SDK changes stay contained in
 `:proton-drive`. Tests use an in-memory `FakeRemoteDriveStore`.
@@ -64,7 +64,7 @@ The Gradle wrapper (9.8.1, AGP 9.4 with built-in Kotlin 2.4) is included:
 
 CI mirrors these commands. The checks live in the reusable `.github/workflows/checks.yml`: four required
 checks, "Lint (ktlint, detekt, Android Lint)", "Unit tests", "Instrumented tests (emulator)" and
-"Build debug APK", plus a non-blocking job that builds the app together with the Proton Drive SDK module.
+"Build debug APK". The debug APK always includes the Proton Drive SDK.
 `pr-ci.yml` runs them on every pull request, and `main-ci.yml` reruns them on `main` and builds an unsigned
 release APK.
 
@@ -99,46 +99,34 @@ marknotes.msalSignatureHash=<base64 SHA-1 of the signing certificate>
   MarkNotes uses. To get the debug hash, run
   `keytool -exportcert -alias androiddebugkey -keystore ~/.android/debug.keystore | openssl sha1 -binary | openssl base64`.
 
-### Building with the Proton Drive SDK
+### Proton Drive SDK
 
-The default build does **not** include the SDK. Proton Drive is then shown as unavailable in
-"Add drive"; Dropbox and OneDrive are not affected. To include the SDK bridge:
+`:proton-drive` is always part of the build. It depends on `me.proton.drive:sdk` from Maven Central and
+on the protoncore libraries it is built against (`me.proton.core:network-data`, `crypto-android`, ...;
+versions in `gradle/libs.versions.toml`). The SDK's Kotlin bindings wrap the C# SDK through JNI; the
+published AAR bundles the NativeAOT library (`libproton_drive_sdk_jni.so`) for `arm64-v8a` and `x86_64`
+only, so the APK is limited to those ABIs and Proton Drive is unavailable on 32-bit devices.
 
-```sh
-./gradlew :app:assembleDebug -Pmarknotes.protonSdk=true
-```
+The SDK doesn't handle login, so MarkNotes keeps its own (`:core` `ProtonAuthClient`) and wires the
+session into the SDK (`ProtonDriveStoreFactory`):
 
-This adds `:proton-drive`, which depends on `me.proton.drive:sdk` from Maven Central (version in
-`gradle/libs.versions.toml`; check [the published versions](https://mvnrepository.com/artifact/me.proton.drive/sdk)
-and update it if needed). The SDK's Kotlin bindings wrap the C# SDK through JNI and need its
-NativeAOT-compiled native library (`libproton_drive_sdk_jni.so`). If the published AAR doesn't
-bundle the native libraries for your ABI, build them from the SDK repository:
+- a protoncore `ApiProvider` sends the SDK's requests with the stored session's UID and access token and
+  `x-pm-appversion: external-drive-marknotes@0.1.0-alpha`. On a 401 it refreshes the tokens through
+  `ProtonConnector`, which saves them, so the app and the SDK never hold different refresh tokens.
+  Human/device verification and missing-scope prompts aren't supported: those requests fail and you
+  sign in again;
+- `ProtonAddressKeys` implements the SDK's `UserAddressResolver` and `PublicAddressResolver`. It fetches
+  the user's addresses and keys (`core/v4/users`, `core/v4/addresses`, `core/v4/keys/all`) and unlocks
+  address keys on demand with the key passphrases derived at login (`ProtonSession.keyPassphrases`),
+  decrypting the address-key token with the user key when present. Sessions saved before key
+  passphrases were stored must sign in again.
 
-1. Clone https://github.com/ProtonDriveApps/sdk and follow its build instructions for the C# SDK.
-2. Publish NativeAOT for Android (`linux-bionic-arm64`, plus `linux-bionic-x64` for emulators) with the .NET 9+ SDK.
-3. Copy the resulting `.so` files into `proton-drive/src/main/jniLibs/<abi>/`.
-4. Or publish the Kotlin bindings (`incubating/client/kt`) to `mavenLocal()`, and add `mavenLocal()` to `settings.gradle.kts`.
+The SDK client is kept across syncs and closed when the session or sync folder changes.
 
-### Finishing the Proton Drive SDK wiring
-
-The SDK doesn't handle authentication or sessions, so MarkNotes ships its own login (`:core`
-`ProtonAuthClient`). `ProtonDriveStore`, the `RemoteDriveStore` built on the SDK, is fully
-implemented. However, `ProtonDriveStoreFactory.createClient` still returns `null`, so the app shows
-"not fully wired yet" when you sync. The remaining steps are:
-
-1. Build a protoncore `ApiProvider` that authenticates with the stored `ProtonSession`
-   (UID + access token, with refresh) and sends `x-pm-appversion: external-drive-marknotes@0.1.0-alpha`.
-2. Implement the SDK's `UserAddressResolver` and `PublicAddressResolver`, unlocking the user's address
-   keys with the key passphrases derived at login (`ProtonSession.keyPassphrases`), or wire protoncore's
-   account/key repositories and use the SDK's `CoreUserAddressResolver` / `CorePublicAddressResolver`.
-3. Call `ProtonDriveSdk.protonDriveClientCreate(scope, userId, apiProvider, ClientCreateRequest(...), userAddressResolver, publicAddressResolver)`
-   and return the client from `createClient`.
-4. Verify how `enumerateEvents` behaves with a `null` cursor. `ProtonDriveStore` assumes it starts from
-   the latest event and records the returned event id as its cursor.
-
-Until then, everything except the network transfer is in place and tested: the sync engine,
-conflict handling, metadata, login and the UI.
-
+Earlier builds left the SDK out on purpose: it was an opt-in module (`-Pmarknotes.protonSdk=true`,
+which PowerShell also mangles unless quoted) loaded by reflection, `ProtonDriveStoreFactory` never
+created the SDK client because the protoncore `ApiProvider` and address-key resolvers were missing, and
+the CI job building it was non-blocking.
 ## Proton API usage rules
 
 MarkNotes follows Proton's rules for third-party personal projects:
@@ -171,7 +159,8 @@ Note: this is not an OSI-approved open source license, since it restricts commer
 The license above covers this project's own code. Third-party dependencies remain under their own
 licenses.
 
-The Proton Drive SDK is GPLv3, so builds that include `:proton-drive` must respect the GPLv3. The
+The Proton Drive SDK and protoncore libraries are GPLv3, and every build includes them, so builds must
+respect the GPLv3. The
 SRP implementation in `:core` was written for this project, following the public protocol as
 implemented in Proton's MIT-licensed [go-srp](https://github.com/ProtonMail/go-srp). No
-protoncore_android code was copied.
+protoncore_android code was copied; it is used as a library dependency.

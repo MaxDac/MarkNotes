@@ -3,6 +3,11 @@ package io.github.maxdac.marknotes.proton
 import io.github.maxdac.marknotes.core.notes.NotePaths
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStore
 import io.github.maxdac.marknotes.core.sync.RemoteEntry
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.nio.channels.Channels
+import java.time.Instant
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.toList
 import me.proton.drive.sdk.ProtonDriveClient
@@ -17,11 +22,6 @@ import me.proton.drive.sdk.entity.NodeResultPair
 import me.proton.drive.sdk.entity.NodeUid
 import me.proton.drive.sdk.entity.RevisionUid
 import me.proton.drive.sdk.entity.ScopeId
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
-import java.io.IOException
-import java.nio.channels.Channels
-import java.time.Instant
 
 /**
  * [RemoteDriveStore] backed by the Proton Drive SDK, scoped to a folder in "My files".
@@ -32,7 +32,16 @@ import java.time.Instant
 class ProtonDriveStore(
     private val client: ProtonDriveClient,
     private val rootFolderName: String,
-) : RemoteDriveStore {
+    private val onClose: () -> Unit = {}
+) : RemoteDriveStore, AutoCloseable {
+    override fun close() {
+        try {
+            client.close()
+        } finally {
+            onClose()
+        }
+    }
+
     private var rootUid: NodeUid? = null
     private var scopeId: ScopeId? = null
     private var cursor: DriveEventId? = null
@@ -71,7 +80,7 @@ class ProtonDriveStore(
             mediaType = MEDIA_TYPE,
             fileSize = bytes.size.toLong(),
             lastModificationTime = now,
-            overrideExistingDraftByOtherClient = false,
+            overrideExistingDraftByOtherClient = false
         )
         val result = client.uploader(request).use { uploader ->
             coroutineScope {
@@ -88,7 +97,7 @@ class ProtonDriveStore(
         val request = FileRevisionUploaderRequest(
             currentActiveRevisionUid = RevisionUid(entry.version),
             lastModificationTime = now,
-            size = bytes.size.toLong(),
+            size = bytes.size.toLong()
         )
         val result = client.uploader(request).use { uploader ->
             coroutineScope {
@@ -141,19 +150,22 @@ class ProtonDriveStore(
 
     private suspend fun scan(folder: NodeUid, path: String) {
         for (node in children(folder)) {
-            if (node.trashTime != null) continue
-            val name = node.name.getOrNull() ?: continue
+            val name = node.name.getOrNull()?.takeIf { node.trashTime == null } ?: continue
             val childPath = NotePaths.join(path, name)
             when (node) {
                 is FolderNode -> {
-                    entries[childPath] = RemoteEntry(childPath, node.uid.value, true, "", node.creationTime.toEpochMilli())
+                    entries[childPath] =
+                        RemoteEntry(childPath, node.uid.value, true, "", node.creationTime.toEpochMilli())
                     scan(node.uid, childPath)
                 }
+
                 is FileNode -> {
                     val revision = node.activeRevision
                     val modified = revision.claimedModificationTime ?: revision.creationTime
-                    entries[childPath] = RemoteEntry(childPath, node.uid.value, false, revision.uid.value, modified.toEpochMilli())
+                    entries[childPath] =
+                        RemoteEntry(childPath, node.uid.value, false, revision.uid.value, modified.toEpochMilli())
                 }
+
                 else -> Unit
             }
         }
@@ -170,12 +182,16 @@ class ProtonDriveStore(
         client.enumerateEvents(scope, cursor).collect { event ->
             when (event) {
                 is DriveEvent.NodeUpdated -> if (touches(known, event.nodeUid, event.parentNodeUid)) stale = true
+
                 is DriveEvent.NodeDeleted -> if (touches(known, event.nodeUid, event.parentNodeUid)) stale = true
+
                 is DriveEvent.ContinuityLost -> stale = true
+
                 is DriveEvent.ScopeAccessLost -> {
                     stale = true
                     rootUid = null
                 }
+
                 else -> Unit
             }
             cursor = event.id
