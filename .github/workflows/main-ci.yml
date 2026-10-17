@@ -18,7 +18,7 @@ env:
 jobs:
   checks:
     name: Checks
-    uses: ./.github/workflows/pr-ci.yml
+    uses: ./.github/workflows/checks.yml
 
   release-build:
     name: Release build (unsigned APK)

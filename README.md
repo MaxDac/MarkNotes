@@ -62,10 +62,20 @@ The Gradle wrapper (9.8.1, AGP 9.4 with built-in Kotlin 2.4) is included:
 ./gradlew :app:connectedDebugAndroidTest     # Compose UI tests on a running emulator/device
 ```
 
-CI mirrors these commands. `.github/workflows/pr-ci.yml` runs on every pull request with four required
-checks: "Lint (ktlint, detekt, Android Lint)", "Unit tests", "Instrumented tests (emulator)" and
-"Build debug APK". A fifth, non-blocking job builds the app together with the Proton Drive SDK module.
-`main-ci.yml` reruns the same checks on `main` and builds an unsigned release APK.
+CI mirrors these commands. The checks live in the reusable `.github/workflows/checks.yml`: four required
+checks, "Lint (ktlint, detekt, Android Lint)", "Unit tests", "Instrumented tests (emulator)" and
+"Build debug APK", plus a non-blocking job that builds the app together with the Proton Drive SDK module.
+`pr-ci.yml` runs them on every pull request, and `main-ci.yml` reruns them on `main` and builds an unsigned
+release APK.
+
+### Releasing
+
+`release.yml` is started manually (Actions → Release → Run workflow) with a `version` (`X.Y.Z`, default
+`0.1.0`) and a `prerelease` flag. It runs the checks, builds a signed APK (`versionName` = version,
+`versionCode` = `X*10000 + Y*100 + Z`), and publishes a `vX.Y.Z` GitHub Release with the APK and its SHA-256.
+Signing uses the repository secrets `RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`,
+`RELEASE_KEY_ALIAS` and `RELEASE_KEY_PASSWORD`. Locally, `assembleRelease` signs only when
+`MARKNOTES_KEYSTORE_PATH` (plus the matching password/alias env vars) is set; otherwise it stays unsigned.
 
 ### Configuring Dropbox and OneDrive
 
