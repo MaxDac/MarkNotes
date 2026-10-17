@@ -47,7 +47,12 @@ object Routes {
 @androidx.compose.runtime.Composable
 private fun MarkNotesNavHost() {
     val navController = rememberNavController()
-    val pathArg = listOf(navArgument("path") { type = NavType.StringType; defaultValue = "" })
+    val pathArg = listOf(
+        navArgument("path") {
+            type = NavType.StringType
+            defaultValue = ""
+        }
+    )
     NavHost(navController = navController, startDestination = Routes.BROWSER) {
         composable(Routes.BROWSER, arguments = pathArg) { entry ->
             BrowserScreen(
@@ -56,30 +61,30 @@ private fun MarkNotesNavHost() {
                 onOpenNote = { navController.navigate(Routes.editor(it)) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenConflicts = { navController.navigate(Routes.CONFLICTS) },
-                onBack = { navController.popBackStack() },
+                onBack = { navController.navigateUp() }
             )
         }
         composable(Routes.EDITOR, arguments = pathArg) { entry ->
             EditorScreen(
                 path = entry.arguments?.getString("path").orEmpty(),
-                onBack = { navController.popBackStack() },
+                onBack = { navController.navigateUp() }
             )
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(
                 onLogin = { navController.navigate(Routes.LOGIN) },
                 onOpenConflicts = { navController.navigate(Routes.CONFLICTS) },
-                onBack = { navController.popBackStack() },
+                onBack = { navController.navigateUp() }
             )
         }
         composable(Routes.LOGIN) {
             LoginScreen(
-                onLoggedIn = { navController.popBackStack() },
-                onBack = { navController.popBackStack() },
+                onLoggedIn = { navController.navigateUp() },
+                onBack = { navController.navigateUp() }
             )
         }
         composable(Routes.CONFLICTS) {
-            ConflictsScreen(onBack = { navController.popBackStack() })
+            ConflictsScreen(onBack = { navController.navigateUp() })
         }
     }
 }

@@ -14,7 +14,7 @@ data class LoginState(
     val busy: Boolean = false,
     val needsTwoFactor: Boolean = false,
     val error: String? = null,
-    val done: Boolean = false,
+    val done: Boolean = false
 )
 
 class LoginViewModel(private val container: AppContainer) : ViewModel() {
@@ -28,6 +28,7 @@ class LoginViewModel(private val container: AppContainer) : ViewModel() {
         this.password = password
         when (val result = container.authClient.login(username.trim(), password)) {
             is LoginResult.Success -> complete(result.session)
+
             is LoginResult.TwoFactorRequired -> {
                 pendingSession = result.session
                 _state.value = _state.value.copy(needsTwoFactor = true)

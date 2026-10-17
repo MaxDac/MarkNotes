@@ -19,7 +19,7 @@ data class SyncRecordEntity(
     val remoteId: String,
     val remoteVersion: String,
     val localHash: String,
-    val syncedAt: Long,
+    val syncedAt: Long
 )
 
 @Dao
@@ -59,8 +59,8 @@ class RoomSyncMetadataStore(private val dao: SyncRecordDao) : SyncMetadataStore 
             record.remoteId,
             record.remoteVersion,
             record.localHash,
-            record.syncedAt,
-        ),
+            record.syncedAt
+        )
     )
 
     override suspend fun delete(path: String) = dao.delete(path)

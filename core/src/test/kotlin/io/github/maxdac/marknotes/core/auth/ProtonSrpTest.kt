@@ -1,11 +1,11 @@
 package io.github.maxdac.marknotes.core.auth
 
+import java.security.SecureRandom
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
-import java.security.SecureRandom
 
 class ProtonSrpTest {
 
@@ -33,7 +33,7 @@ class ProtonSrpTest {
         val vectors = mapOf(
             "PTTsDBs/mlLnSk6VmtFghe" to "\$2y\$10\$PTTsDBs/mlLnSk6VmtFgheNSiK/lSwtJsrBLLDK3kZYI7193nInqy",
             "4DZHd6WZX4fEaWKtCfYdde" to "\$2y\$10\$4DZHd6WZX4fEaWKtCfYddeZfcryISo9eEMgbA90O.Wnnz1s1VKmKC",
-            "RpyeXO7K2eD3r/ZZ/B63V." to "\$2y\$10\$RpyeXO7K2eD3r/ZZ/B63V.Tya53OExbyO8LR7TB93KYP4PvC.EPMW",
+            "RpyeXO7K2eD3r/ZZ/B63V." to "\$2y\$10\$RpyeXO7K2eD3r/ZZ/B63V.Tya53OExbyO8LR7TB93KYP4PvC.EPMW"
         )
         for ((encodedSalt, expected) in vectors) {
             val salt = decodeBcryptBase64(encodedSalt)

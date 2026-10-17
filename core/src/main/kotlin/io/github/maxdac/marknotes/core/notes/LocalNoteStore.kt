@@ -10,7 +10,7 @@ data class NoteEntry(
     val path: String,
     val isFolder: Boolean,
     val modifiedMillis: Long,
-    val size: Long,
+    val size: Long
 ) {
     val name: String get() = NotePaths.name(path)
     val displayName: String get() = NotePaths.displayName(path)
@@ -82,7 +82,7 @@ class LocalNoteStore(val root: File) {
                 temp.toPath(),
                 target.toPath(),
                 StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.ATOMIC_MOVE
             )
         } catch (e: AtomicMoveNotSupportedException) {
             Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
@@ -165,6 +165,6 @@ class LocalNoteStore(val root: File) {
         path = path,
         isFolder = isDirectory,
         modifiedMillis = lastModified(),
-        size = if (isFile) length() else 0L,
+        size = if (isFile) length() else 0L
     )
 }

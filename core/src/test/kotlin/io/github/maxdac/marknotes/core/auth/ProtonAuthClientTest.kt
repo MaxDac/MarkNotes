@@ -1,5 +1,6 @@
 package io.github.maxdac.marknotes.core.auth
 
+import java.util.Base64
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -15,7 +16,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
-import java.util.Base64
 
 class ProtonAuthClientTest {
     private val password = "hunter2-correct"
@@ -37,35 +37,48 @@ class ProtonAuthClientTest {
                 val body = request.body.readUtf8()
                 return when (request.path) {
                     "/auth/v4/sessions" -> ok("""{"Code":1000,"UID":"unauth","AccessToken":"ua","RefreshToken":"ur"}""")
+
                     "/core/v4/auth/info" -> if (humanVerification) {
-                        MockResponse().setResponseCode(422).setBody("""{"Code":9001,"Error":"Human verification required"}""")
+                        MockResponse().setResponseCode(
+                            422
+                        ).setBody("""{"Code":9001,"Error":"Human verification required"}""")
                     } else {
                         ok(
                             """{"Code":1000,"Version":4,"Modulus":${JsonPrimitive(SrpTestFixtures.SIGNED_MODULUS)},""" +
-                                """"ServerEphemeral":"${b64(srpServer.serverEphemeral)}","Salt":"$salt","SRPSession":"srp-session"}""",
+                                """"ServerEphemeral":"${b64(
+                                    srpServer.serverEphemeral
+                                )}","Salt":"$salt","SRPSession":"srp-session"}"""
                         )
                     }
+
                     "/core/v4/auth" -> {
                         val json = Json.parseToJsonElement(body).jsonObject
                         val proof = srpServer.verify(
                             Base64.getDecoder().decode(json["ClientEphemeral"]!!.jsonPrimitive.content),
-                            Base64.getDecoder().decode(json["ClientProof"]!!.jsonPrimitive.content),
+                            Base64.getDecoder().decode(json["ClientProof"]!!.jsonPrimitive.content)
                         )
                         if (proof == null) {
-                            MockResponse().setResponseCode(422).setBody("""{"Code":8002,"Error":"Incorrect login credentials"}""")
+                            MockResponse().setResponseCode(
+                                422
+                            ).setBody("""{"Code":8002,"Error":"Incorrect login credentials"}""")
                         } else {
+                            val serverProof = b64(proof)
                             ok(
-                                """{"Code":1000,"UID":"uid-1","AccessToken":"at","RefreshToken":"rt","UserID":"user",""" +
-                                    """"ServerProof":"${b64(proof)}","PasswordMode":1,"2FA":{"Enabled":$twoFactorEnabled}}""",
+                                """{"Code":1000,"UID":"uid-1","AccessToken":"at","RefreshToken":"rt",""" +
+                                    """"UserID":"user","ServerProof":"$serverProof","PasswordMode":1,""" +
+                                    """"2FA":{"Enabled":$twoFactorEnabled}}"""
                             )
                         }
                     }
+
                     "/core/v4/auth/2fa" -> if (body.contains("123456")) {
                         ok("""{"Code":1000,"Scopes":["full"]}""")
                     } else {
                         MockResponse().setResponseCode(422).setBody("""{"Code":8002,"Error":"Incorrect code"}""")
                     }
+
                     "/auth/v4/refresh" -> ok("""{"Code":1000,"AccessToken":"at2","RefreshToken":"rt2"}""")
+
                     else -> MockResponse().setResponseCode(404)
                 }
             }

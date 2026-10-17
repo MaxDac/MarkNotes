@@ -29,7 +29,7 @@ data class SyncState(
     val running: Boolean = false,
     val message: String? = null,
     val lastSyncAt: Long = 0L,
-    val conflicts: List<SyncConflict> = emptyList(),
+    val conflicts: List<SyncConflict> = emptyList()
 ) {
     val loggedIn: Boolean get() = session != null
 }
@@ -46,7 +46,7 @@ class SyncManager(
     private val authClient: ProtonAuthClient,
     private val settings: AppSettings,
     private val scope: CoroutineScope,
-    private val onLocalChanged: () -> Unit,
+    private val onLocalChanged: () -> Unit
 ) {
     private val mutex = Mutex()
     private var cachedRemote: Pair<String, RemoteDriveStore>? = null
@@ -55,8 +55,8 @@ class SyncManager(
         SyncState(
             session = sessionStorage.load(),
             lastSyncAt = settings.lastSyncAt,
-            message = settings.lastSyncSummary.ifBlank { null },
-        ),
+            message = settings.lastSyncSummary.ifBlank { null }
+        )
     )
     val state: StateFlow<SyncState> = _state
 
@@ -187,7 +187,7 @@ class SyncManager(
             _state.update {
                 it.copy(
                     message = "Proton Drive SDK not included in this build. " +
-                        "See the README to build with -Pmarknotes.protonSdk=true.",
+                        "See the README to build with -Pmarknotes.protonSdk=true."
                 )
             }
             return null

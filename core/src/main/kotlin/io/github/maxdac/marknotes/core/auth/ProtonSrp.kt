@@ -18,7 +18,7 @@ object ProtonSrp {
     class Proofs(
         val clientEphemeral: ByteArray,
         val clientProof: ByteArray,
-        val expectedServerProof: ByteArray,
+        val expectedServerProof: ByteArray
     )
 
     fun expandHash(data: ByteArray): ByteArray {
@@ -94,7 +94,7 @@ object ProtonSrp {
         modulusBytes: ByteArray,
         serverEphemeralBytes: ByteArray,
         hashedPassword: ByteArray,
-        random: SecureRandom = SecureRandom(),
+        random: SecureRandom = SecureRandom()
     ): Proofs {
         val modulus = toBigInt(modulusBytes)
         require(modulus.bitLength() == BIT_LENGTH) { "Invalid modulus" }

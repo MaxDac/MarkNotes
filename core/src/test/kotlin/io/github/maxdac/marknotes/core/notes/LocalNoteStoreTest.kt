@@ -1,14 +1,14 @@
 package io.github.maxdac.marknotes.core.notes
 
+import java.io.File
+import java.io.IOException
+import java.nio.file.Files
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.io.File
-import java.io.IOException
-import java.nio.file.Files
 
 class LocalNoteStoreTest {
     private lateinit var dir: File

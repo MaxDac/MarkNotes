@@ -14,12 +14,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -45,12 +45,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.maxdac.marknotes.appContainer
 import io.github.maxdac.marknotes.core.notes.NoteEntry
 import io.github.maxdac.marknotes.core.notes.NotePaths
+
+const val NEW_NOTE_FAB_TAG = "new-note-fab"
 
 private sealed interface BrowserDialog {
     data object NewNote : BrowserDialog
@@ -67,7 +70,7 @@ fun BrowserScreen(
     onOpenNote: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenConflicts: () -> Unit,
-    onBack: () -> Unit,
+    onBack: () -> Unit
 ) {
     val container = LocalContext.current.appContainer
     val vm: BrowserViewModel = viewModel { BrowserViewModel(container, folder) }
@@ -97,16 +100,17 @@ fun BrowserScreen(
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
                     }
-                },
+                }
             )
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { dialog = BrowserDialog.NewNote },
-                icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
-                text = { Text("New note") },
+                modifier = Modifier.testTag(NEW_NOTE_FAB_TAG),
+                icon = { Icon(Icons.Filled.Edit, contentDescription = "New note") },
+                text = { Text("New note") }
             )
-        },
+        }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             if (sync.running) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -114,13 +118,13 @@ fun BrowserScreen(
                 Card(
                     onClick = onOpenConflicts,
                     modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                 ) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Warning, contentDescription = null)
                         Text(
                             "${sync.conflicts.size} sync conflict(s). Tap to resolve.",
-                            modifier = Modifier.padding(start = 12.dp),
+                            modifier = Modifier.padding(start = 12.dp)
                         )
                     }
                 }
@@ -136,7 +140,7 @@ fun BrowserScreen(
                             entry = entry,
                             onClick = { if (entry.isFolder) onOpenFolder(entry.path) else onOpenNote(entry.path) },
                             onRename = { dialog = BrowserDialog.Rename(entry) },
-                            onDelete = { dialog = BrowserDialog.Delete(entry) },
+                            onDelete = { dialog = BrowserDialog.Delete(entry) }
                         )
                     }
                 }
@@ -149,19 +153,28 @@ fun BrowserScreen(
             dialog = null
             vm.createNote(name, onOpenNote)
         }
+
         BrowserDialog.NewFolder -> NameDialog("New folder", "", onDismiss = { dialog = null }) { name ->
             dialog = null
             vm.createFolder(name)
         }
+
         is BrowserDialog.Rename -> NameDialog("Rename", d.entry.displayName, onDismiss = { dialog = null }) { name ->
             dialog = null
             vm.rename(d.entry, name)
         }
+
         is BrowserDialog.Delete -> AlertDialog(
             onDismissRequest = { dialog = null },
             title = { Text("Delete ${d.entry.displayName}?") },
             text = {
-                Text(if (d.entry.isFolder) "The folder and all its notes will be deleted." else "The note will be deleted.")
+                Text(
+                    if (d.entry.isFolder) {
+                        "The folder and all its notes will be deleted."
+                    } else {
+                        "The note will be deleted."
+                    }
+                )
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -169,8 +182,9 @@ fun BrowserScreen(
                     vm.delete(d.entry)
                 }) { Text("Delete") }
             },
-            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } }
         )
+
         null -> Unit
     }
 
@@ -179,7 +193,7 @@ fun BrowserScreen(
             onDismissRequest = vm::clearError,
             title = { Text("Error") },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = vm::clearError) { Text("OK") } },
+            confirmButton = { TextButton(onClick = vm::clearError) { Text("OK") } }
         )
     }
 }
@@ -192,7 +206,7 @@ private fun EntryRow(entry: NoteEntry, onClick: () -> Unit, onRename: () -> Unit
         leadingContent = {
             Icon(
                 if (entry.isFolder) Icons.Filled.Folder else Icons.AutoMirrored.Filled.Notes,
-                contentDescription = null,
+                contentDescription = null
             )
         },
         headlineContent = { Text(entry.displayName) },
@@ -212,7 +226,7 @@ private fun EntryRow(entry: NoteEntry, onClick: () -> Unit, onRename: () -> Unit
                     })
                 }
             }
-        },
+        }
     )
 }
 
@@ -224,12 +238,14 @@ fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onConfirm:
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text("Name") })
+                OutlinedTextField(value = name, onValueChange = {
+                    name = it
+                }, singleLine = true, label = { Text("Name") })
             }
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(name) }, enabled = name.isNotBlank()) { Text("OK") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

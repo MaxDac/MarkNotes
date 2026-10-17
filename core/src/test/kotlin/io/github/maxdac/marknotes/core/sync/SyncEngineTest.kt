@@ -1,6 +1,8 @@
 package io.github.maxdac.marknotes.core.sync
 
 import io.github.maxdac.marknotes.core.notes.LocalNoteStore
+import java.io.File
+import java.nio.file.Files
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -8,8 +10,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.io.File
-import java.nio.file.Files
 
 class SyncEngineTest {
     private lateinit var dir: File

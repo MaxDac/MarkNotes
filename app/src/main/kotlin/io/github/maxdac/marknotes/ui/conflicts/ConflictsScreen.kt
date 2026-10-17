@@ -51,9 +51,9 @@ fun ConflictsScreen(onBack: () -> Unit) {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                },
+                }
             )
-        },
+        }
     ) { padding ->
         if (state.conflicts.isEmpty()) {
             Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -62,7 +62,7 @@ fun ConflictsScreen(onBack: () -> Unit) {
         } else {
             LazyColumn(
                 Modifier.padding(padding).fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(state.conflicts, key = { it.path }) { conflict ->
                     ConflictCard(conflict, enabled = !state.running) { resolution ->
@@ -104,7 +104,7 @@ private fun VersionText(label: String, text: String) {
             .heightIn(max = 200.dp)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
             .verticalScroll(rememberScrollState())
-            .padding(8.dp),
+            .padding(8.dp)
     ) {
         Text(text.ifEmpty { "(empty)" }, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
     }

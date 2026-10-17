@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,9 @@ import io.noties.markwon.Markwon
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
+
+const val EDITOR_FIELD_TAG = "editor-field"
+const val PREVIEW_TAG = "markdown-preview"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,18 +82,20 @@ fun EditorScreen(path: String, onBack: () -> Unit) {
                             Icon(Icons.Filled.Visibility, contentDescription = "Preview")
                         }
                     }
-                },
+                }
             )
-        },
+        }
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize().imePadding()) {
             when {
                 !state.loaded -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+
                 state.preview -> MarkdownPreview(state.text)
+
                 else -> TextField(
                     value = state.text,
                     onValueChange = vm::onTextChange,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().testTag(EDITOR_FIELD_TAG),
                     placeholder = { Text("Write markdown…") },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -97,8 +103,8 @@ fun EditorScreen(path: String, onBack: () -> Unit) {
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                    ),
+                        unfocusedIndicatorColor = Color.Transparent
+                    )
                 )
             }
         }
@@ -109,7 +115,7 @@ fun EditorScreen(path: String, onBack: () -> Unit) {
             onDismissRequest = vm::clearError,
             title = { Text("Error") },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = vm::clearError) { Text("OK") } },
+            confirmButton = { TextButton(onClick = vm::clearError) { Text("OK") } }
         )
     }
 }
@@ -127,12 +133,12 @@ private fun MarkdownPreview(text: String) {
     val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val linkColor = MaterialTheme.colorScheme.primary.toArgb()
     AndroidView(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp).testTag(PREVIEW_TAG),
         factory = { ctx -> TextView(ctx).apply { textSize = 16f } },
         update = { view ->
             view.setTextColor(textColor)
             view.setLinkTextColor(linkColor)
             markwon.setMarkdown(view, text)
-        },
+        }
     )
 }

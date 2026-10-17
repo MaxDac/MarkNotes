@@ -9,12 +9,12 @@ import io.github.maxdac.marknotes.data.AppSettings
 import io.github.maxdac.marknotes.data.MarkNotesDatabase
 import io.github.maxdac.marknotes.data.RoomSyncMetadataStore
 import io.github.maxdac.marknotes.sync.SyncManager
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.io.File
 
 class MarkNotesApp : Application() {
     lateinit var container: AppContainer
@@ -53,7 +53,7 @@ class AppContainer(context: Context) {
         authClient = authClient,
         settings = settings,
         scope = appScope,
-        onLocalChanged = ::notifyLocalChanged,
+        onLocalChanged = ::notifyLocalChanged
     )
 }
 

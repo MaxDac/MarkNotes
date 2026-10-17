@@ -10,7 +10,7 @@ class SyncConflict(
     val path: String,
     val localContent: ByteArray,
     val remoteContent: ByteArray,
-    val remote: RemoteEntry,
+    val remote: RemoteEntry
 ) {
     val localText: String get() = localContent.toString(Charsets.UTF_8)
     val remoteText: String get() = remoteContent.toString(Charsets.UTF_8)
@@ -24,7 +24,7 @@ data class SyncResult(
     val deletedLocal: Int,
     val deletedRemote: Int,
     val conflicts: List<SyncConflict>,
-    val errors: List<String>,
+    val errors: List<String>
 ) {
     val summary: String
         get() = buildString {
@@ -46,7 +46,7 @@ class SyncEngine(
     private val local: LocalNoteStore,
     private val remote: RemoteDriveStore,
     private val metadata: SyncMetadataStore,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = System::currentTimeMillis
 ) {
 
     suspend fun sync(): SyncResult = Run().execute()
@@ -54,10 +54,12 @@ class SyncEngine(
     suspend fun resolve(conflict: SyncConflict, resolution: ConflictResolution) {
         when (resolution) {
             ConflictResolution.KEEP_LOCAL -> keepLocal(conflict)
+
             ConflictResolution.KEEP_REMOTE -> {
                 local.writeBytes(conflict.path, conflict.remoteContent)
                 recordFile(conflict.path, conflict.remote, conflict.remoteContent)
             }
+
             ConflictResolution.KEEP_BOTH -> {
                 val copyPath = local.uniqueSibling(conflict.path, CONFLICT_SUFFIX)
                 local.writeBytes(copyPath, conflict.remoteContent)
@@ -82,8 +84,8 @@ class SyncEngine(
                 remoteId = entry.id,
                 remoteVersion = entry.version,
                 localHash = Hashing.sha256Hex(bytes),
-                syncedAt = clock(),
-            ),
+                syncedAt = clock()
+            )
         )
     }
 
@@ -103,113 +105,139 @@ class SyncEngine(
         private lateinit var localAll: List<NoteEntry>
         private lateinit var remoteAll: List<RemoteEntry>
         private lateinit var records: Map<String, SyncRecord>
+        private lateinit var localFolders: Set<String>
+        private lateinit var localFiles: Set<String>
+        private lateinit var remoteFolders: Map<String, RemoteEntry>
+        private lateinit var remoteFiles: Map<String, RemoteEntry>
+        private val skipped = mutableSetOf<String>()
+        private val pendingLocalFolderDeletes = mutableSetOf<String>()
+        private val pendingRemoteFolderDeletes = linkedMapOf<String, RemoteEntry>()
 
         suspend fun execute(): SyncResult {
             localAll = local.listAll().filter { it.isFolder || NotePaths.isNote(it.path) }
-            remoteAll = remote.snapshot().filter { isSyncablePath(it.path) && (it.isFolder || NotePaths.isNote(it.path)) }
+            remoteAll =
+                remote.snapshot().filter { isSyncablePath(it.path) && (it.isFolder || NotePaths.isNote(it.path)) }
             records = metadata.all().associateBy { it.path }
 
-            val localFolders = localAll.filter { it.isFolder }.map { it.path }.toSet()
-            val localFiles = localAll.filter { !it.isFolder }.map { it.path }.toSet()
-            val remoteFolders = remoteAll.filter { it.isFolder }.associateBy { it.path }
-            val remoteFiles = remoteAll.filter { !it.isFolder }.associateBy { it.path }
+            localFolders = localAll.filter { it.isFolder }.map { it.path }.toSet()
+            localFiles = localAll.filter { !it.isFolder }.map { it.path }.toSet()
+            remoteFolders = remoteAll.filter { it.isFolder }.associateBy { it.path }
+            remoteFiles = remoteAll.filter { !it.isFolder }.associateBy { it.path }
 
-            val skipped = mutableSetOf<String>()
             (localFolders.filter { it in remoteFiles } + localFiles.filter { it in remoteFolders }).forEach {
                 skipped += it
                 errors += "$it: is a file on one side and a folder on the other"
             }
 
-            val pendingLocalFolderDeletes = mutableSetOf<String>()
-            val pendingRemoteFolderDeletes = linkedMapOf<String, RemoteEntry>()
-
             // Phase 1: folders, parents first.
-            val folderPaths = (localFolders + remoteFolders.keys + records.values.filter { it.isFolder }.map { it.path })
+            val recordedFolders = records.values.filter { it.isFolder }.map { it.path }
+            val folderPaths = (localFolders + remoteFolders.keys + recordedFolders)
                 .toSortedSet(compareBy<String>({ NotePaths.depth(it) }, { it }))
             for (path in folderPaths) {
-                if (path in skipped) continue
-                guarded(path) {
-                    val inLocal = path in localFolders
-                    val remoteFolder = remoteFolders[path]
-                    val record = records[path]?.takeIf { it.isFolder }
-                    when {
-                        inLocal && remoteFolder != null -> {
-                            if (record == null || record.remoteId != remoteFolder.id) recordFolder(path, remoteFolder.id)
-                        }
-                        inLocal -> {
-                            if (record == null || hasLocalSurvivors(path)) {
-                                val created = remote.createFolder(path)
-                                recordFolder(path, created.id)
-                            } else {
-                                pendingLocalFolderDeletes += path
-                            }
-                        }
-                        remoteFolder != null -> {
-                            if (record == null || hasRemoteSurvivors(path)) {
-                                local.createFolder(path)
-                                recordFolder(path, remoteFolder.id)
-                            } else {
-                                pendingRemoteFolderDeletes[path] = remoteFolder
-                            }
-                        }
-                        else -> metadata.delete(path)
-                    }
-                    Unit
-                }
+                if (path !in skipped) guarded(path) { syncFolder(path) }
             }
 
             // Phase 2: notes.
-            val filePaths = (localFiles + remoteFiles.keys + records.values.filter { !it.isFolder }.map { it.path }).toSortedSet()
+            val recordedFiles = records.values.filter { !it.isFolder }.map { it.path }
+            val filePaths = (localFiles + remoteFiles.keys + recordedFiles).toSortedSet()
             for (path in filePaths) {
-                if (path in skipped) continue
-                guarded(path) {
-                    val inLocal = path in localFiles
-                    val remoteFile = remoteFiles[path]
-                    val record = records[path]?.takeIf { !it.isFolder }
-                    when {
-                        inLocal && remoteFile != null -> {
-                            if (record == null) {
-                                compareOrConflict(path, remoteFile)
-                            } else {
-                                val localChanged = localHash(path) != record.localHash
-                                val remoteChanged = remoteChanged(remoteFile, record)
-                                when {
-                                    localChanged && remoteChanged -> compareOrConflict(path, remoteFile)
-                                    localChanged -> uploadRevision(path, remoteFile)
-                                    remoteChanged -> download(path, remoteFile)
-                                    else -> Unit
-                                }
-                            }
-                        }
-                        inLocal -> {
-                            when {
-                                record == null || localHash(path) != record.localHash -> uploadNew(path)
-                                hasPendingAncestor(path, pendingLocalFolderDeletes) -> metadata.delete(path)
-                                else -> {
-                                    local.delete(path)
-                                    metadata.delete(path)
-                                    deletedLocal++
-                                }
-                            }
-                        }
-                        remoteFile != null -> {
-                            when {
-                                record == null || remoteChanged(remoteFile, record) -> download(path, remoteFile)
-                                hasPendingAncestor(path, pendingRemoteFolderDeletes.keys) -> metadata.delete(path)
-                                else -> {
-                                    remote.delete(remoteFile)
-                                    metadata.delete(path)
-                                    deletedRemote++
-                                }
-                            }
-                        }
-                        else -> metadata.delete(path)
-                    }
-                    Unit
-                }
+                if (path !in skipped) guarded(path) { syncNote(path) }
             }
 
             // Phase 3: folder deletions, top-most folders only.
+            applyFolderDeletes()
+
+            return SyncResult(uploaded, downloaded, deletedLocal, deletedRemote, conflicts.toList(), errors.toList())
+        }
+
+        private suspend fun syncFolder(path: String) {
+            val inLocal = path in localFolders
+            val remoteFolder = remoteFolders[path]
+            val record = records[path]?.takeIf { it.isFolder }
+            when {
+                inLocal && remoteFolder != null -> {
+                    if (record == null || record.remoteId != remoteFolder.id) {
+                        recordFolder(path, remoteFolder.id)
+                    }
+                }
+
+                inLocal -> {
+                    if (record == null || hasLocalSurvivors(path)) {
+                        val created = remote.createFolder(path)
+                        recordFolder(path, created.id)
+                    } else {
+                        pendingLocalFolderDeletes += path
+                    }
+                }
+
+                remoteFolder != null -> {
+                    if (record == null || hasRemoteSurvivors(path)) {
+                        local.createFolder(path)
+                        recordFolder(path, remoteFolder.id)
+                    } else {
+                        pendingRemoteFolderDeletes[path] = remoteFolder
+                    }
+                }
+
+                else -> metadata.delete(path)
+            }
+        }
+
+        private suspend fun syncNote(path: String) {
+            val inLocal = path in localFiles
+            val remoteFile = remoteFiles[path]
+            val record = records[path]?.takeIf { !it.isFolder }
+            when {
+                inLocal && remoteFile != null -> syncNoteOnBothSides(path, remoteFile, record)
+                inLocal -> syncLocalOnlyNote(path, record)
+                remoteFile != null -> syncRemoteOnlyNote(path, remoteFile, record)
+                else -> metadata.delete(path)
+            }
+        }
+
+        private suspend fun syncNoteOnBothSides(path: String, remoteFile: RemoteEntry, record: SyncRecord?) {
+            if (record == null) {
+                compareOrConflict(path, remoteFile)
+                return
+            }
+            val localChanged = localHash(path) != record.localHash
+            val remoteChanged = remoteChanged(remoteFile, record)
+            when {
+                localChanged && remoteChanged -> compareOrConflict(path, remoteFile)
+                localChanged -> uploadRevision(path, remoteFile)
+                remoteChanged -> download(path, remoteFile)
+            }
+        }
+
+        private suspend fun syncLocalOnlyNote(path: String, record: SyncRecord?) {
+            when {
+                record == null || localHash(path) != record.localHash -> uploadNew(path)
+
+                hasPendingAncestor(path, pendingLocalFolderDeletes) -> metadata.delete(path)
+
+                else -> {
+                    local.delete(path)
+                    metadata.delete(path)
+                    deletedLocal++
+                }
+            }
+        }
+
+        private suspend fun syncRemoteOnlyNote(path: String, remoteFile: RemoteEntry, record: SyncRecord?) {
+            when {
+                record == null || remoteChanged(remoteFile, record) -> download(path, remoteFile)
+
+                hasPendingAncestor(path, pendingRemoteFolderDeletes.keys) -> metadata.delete(path)
+
+                else -> {
+                    remote.delete(remoteFile)
+                    metadata.delete(path)
+                    deletedRemote++
+                }
+            }
+        }
+
+        private suspend fun applyFolderDeletes() {
             for (path in pendingLocalFolderDeletes) {
                 if (hasPendingAncestor(path, pendingLocalFolderDeletes)) continue
                 guarded(path) {
@@ -224,8 +252,6 @@ class SyncEngine(
                     forgetTree(path)
                 }
             }
-
-            return SyncResult(uploaded, downloaded, deletedLocal, deletedRemote, conflicts.toList(), errors.toList())
         }
 
         private inline fun guarded(path: String, block: () -> Unit) {

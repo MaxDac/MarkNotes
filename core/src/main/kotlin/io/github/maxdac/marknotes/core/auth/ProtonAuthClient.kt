@@ -1,5 +1,8 @@
 package io.github.maxdac.marknotes.core.auth
 
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -15,14 +18,11 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.security.MessageDigest
-import java.security.SecureRandom
-import java.util.Base64
 
 class ProtonApiException(
     val code: Int,
     message: String,
-    val httpStatus: Int = 0,
+    val httpStatus: Int = 0
 ) : Exception(message) {
     val isHumanVerificationRequired: Boolean get() = code == HUMAN_VERIFICATION_REQUIRED
 
@@ -31,7 +31,9 @@ class ProtonApiException(
             HUMAN_VERIFICATION_REQUIRED ->
                 "Proton is asking for human verification (captcha), which this app does not support. " +
                     "Sign in once at proton.me from this network, wait a while and try again."
+
             WRONG_PASSWORD -> "Incorrect username or password."
+
             else -> message ?: "Unknown error"
         }
 
@@ -54,7 +56,7 @@ class ProtonAuthClient(
     private val baseUrl: String = DEFAULT_BASE_URL,
     private val appVersion: String = APP_VERSION,
     httpClient: OkHttpClient = OkHttpClient(),
-    private val random: SecureRandom = SecureRandom(),
+    private val random: SecureRandom = SecureRandom()
 ) {
     private val http: OkHttpClient = httpClient.newBuilder()
         .addInterceptor { chain ->
@@ -62,7 +64,7 @@ class ProtonAuthClient(
                 chain.request().newBuilder()
                     .header("x-pm-appversion", appVersion)
                     .header("Accept", "application/vnd.protonmail.v1+json")
-                    .build(),
+                    .build()
             )
         }
         .build()
@@ -79,7 +81,7 @@ class ProtonAuthClient(
             throw ProtonApiException(
                 0,
                 "This account uses a legacy password scheme (version $version). " +
-                    "Sign in once at proton.me to upgrade it, then try again.",
+                    "Sign in once at proton.me to upgrade it, then try again."
             )
         }
         val modulus = ProtonSrp.decodeModulus(info.string("Modulus"))
@@ -95,7 +97,7 @@ class ProtonAuthClient(
                 put("ClientProof", encode(proofs.clientProof))
                 put("SRPSession", info.string("SRPSession"))
             },
-            unauthSession,
+            unauthSession
         )
         if (!MessageDigest.isEqual(decode(auth.string("ServerProof")), proofs.expectedServerProof)) {
             throw ProtonApiException(0, "Server proof verification failed")
@@ -105,7 +107,7 @@ class ProtonAuthClient(
             accessToken = auth.string("AccessToken"),
             refreshToken = auth.string("RefreshToken"),
             username = username,
-            userId = auth.stringOrNull("UserID").orEmpty(),
+            userId = auth.stringOrNull("UserID").orEmpty()
         )
         if (auth.intOrNull("PasswordMode") == 2) {
             logoutQuietly(session)
@@ -114,10 +116,12 @@ class ProtonAuthClient(
         val twoFactor = twoFactorFlags(auth)
         when {
             (twoFactor and TOTP) != 0 -> LoginResult.TwoFactorRequired(session)
+
             twoFactor != 0 -> {
                 logoutQuietly(session)
                 throw ProtonApiException(0, "Only authenticator-app (TOTP) two-factor authentication is supported.")
             }
+
             else -> LoginResult.Success(session)
         }
     }
@@ -156,7 +160,7 @@ class ProtonAuthClient(
         val response = execute(request)
         session.copy(
             accessToken = response.string("AccessToken"),
-            refreshToken = response.string("RefreshToken"),
+            refreshToken = response.string("RefreshToken")
         )
     }
 
@@ -183,13 +187,13 @@ class ProtonAuthClient(
             Request.Builder()
                 .url(baseUrl + "/auth/v4/sessions")
                 .post("{}".toRequestBody(JSON))
-                .build(),
+                .build()
         )
         return ProtonSession(
             uid = response.string("UID"),
             accessToken = response.string("AccessToken"),
             refreshToken = response.stringOrNull("RefreshToken").orEmpty(),
-            username = "",
+            username = ""
         )
     }
 
@@ -214,7 +218,7 @@ class ProtonAuthClient(
                 null
             }
             val code = json?.intOrNull("Code") ?: 0
-            if (!response.isSuccessful || json == null || (code != 0 && code != 1000 && code != 1001)) {
+            if (!response.isSuccessful || json == null || code !in SUCCESS_CODES) {
                 val message = json?.stringOrNull("Error") ?: "HTTP ${response.code}"
                 throw ProtonApiException(code, message, response.code)
             }
@@ -249,6 +253,7 @@ class ProtonAuthClient(
         const val DEFAULT_BASE_URL = "https://drive-api.proton.me"
         const val APP_VERSION = "external-drive-marknotes@0.1.0-alpha"
         private const val TOTP = 1
+        private val SUCCESS_CODES = setOf(0, 1000, 1001)
         private val JSON = "application/json".toMediaType()
     }
 }

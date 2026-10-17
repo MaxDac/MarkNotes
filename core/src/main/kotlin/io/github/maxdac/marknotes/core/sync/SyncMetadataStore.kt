@@ -7,7 +7,7 @@ data class SyncRecord(
     val remoteId: String,
     val remoteVersion: String,
     val localHash: String,
-    val syncedAt: Long,
+    val syncedAt: Long
 )
 
 interface SyncMetadataStore {

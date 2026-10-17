@@ -17,7 +17,7 @@ data class ProtonSession(
     val username: String,
     val userId: String = "",
     /** Passphrases that unlock the user's private keys, by key ID. Needed by the Drive SDK. */
-    val keyPassphrases: Map<String, String> = emptyMap(),
+    val keyPassphrases: Map<String, String> = emptyMap()
 ) {
     fun toJson(): String = buildJsonObject {
         put("uid", uid)
@@ -42,7 +42,7 @@ data class ProtonSession(
                 userId = str("userId"),
                 keyPassphrases = obj["keyPassphrases"]?.jsonObject
                     ?.mapValues { it.value.jsonPrimitive.contentOrNull.orEmpty() }
-                    .orEmpty(),
+                    .orEmpty()
             )
         }
     }

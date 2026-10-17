@@ -18,7 +18,7 @@ data class EditorState(
     val text: String = "",
     val preview: Boolean = false,
     val dirty: Boolean = false,
-    val error: String? = null,
+    val error: String? = null
 )
 
 class EditorViewModel(private val container: AppContainer, val path: String) : ViewModel() {

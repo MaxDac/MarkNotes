@@ -63,9 +63,9 @@ fun LoginScreen(onLoggedIn: () -> Unit, onBack: () -> Unit) {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                },
+                }
             )
-        },
+        }
     ) { padding ->
         Column(
             Modifier
@@ -74,13 +74,17 @@ fun LoginScreen(onLoggedIn: () -> Unit, onBack: () -> Unit) {
                 .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(THIRD_PARTY_DISCLAIMER, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    THIRD_PARTY_DISCLAIMER,
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
 
             if (!state.needsTwoFactor) {
@@ -90,7 +94,7 @@ fun LoginScreen(onLoggedIn: () -> Unit, onBack: () -> Unit) {
                     label = { Text("Username or email") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = password,
@@ -99,12 +103,12 @@ fun LoginScreen(onLoggedIn: () -> Unit, onBack: () -> Unit) {
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Button(
                     onClick = { vm.login(username, password) },
                     enabled = !state.busy && username.isNotBlank() && password.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth()
                 ) { Text("Log in") }
             } else {
                 Text("Enter the 6-digit code from your authenticator app.")
@@ -114,12 +118,12 @@ fun LoginScreen(onLoggedIn: () -> Unit, onBack: () -> Unit) {
                     label = { Text("Two-factor code") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Button(
                     onClick = { vm.submitCode(code) },
                     enabled = !state.busy && code.length == 6,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth()
                 ) { Text("Verify") }
             }
 
@@ -130,7 +134,7 @@ fun LoginScreen(onLoggedIn: () -> Unit, onBack: () -> Unit) {
             Text(
                 "Your password is only used to sign in and is never stored. " +
                     "CAPTCHA / human verification is not supported in this version.",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodySmall
             )
         }
     }

@@ -37,15 +37,21 @@ The sync engine only talks to the `RemoteDriveStore` interface, so SDK changes s
 
 ## Build
 
-Requirements: JDK 17 and the Android SDK (compile SDK 35). The app runs on Android 10+ (minSdk 29,
-required by the Proton Drive SDK). The Gradle wrapper (8.10.2) is included:
+Requirements: JDK 21+ (Android Studio's bundled JBR works) and the Android SDK with platform 37
+(compileSdk 37, targetSdk 36). The app runs on Android 10+ (minSdk 29, required by the Proton Drive SDK).
+The Gradle wrapper (9.8.1, AGP 9.4 with built-in Kotlin 2.4) is included:
 
 ```sh
-./gradlew assembleDebug test
+./gradlew assembleDebug                      # build the debug APK
+./gradlew ktlintCheck detekt lintDebug       # ktlint, detekt and Android Lint (ktlintFormat auto-fixes style)
+./gradlew testDebugUnitTest :core:test       # unit tests (:core is a plain JVM module)
+./gradlew :app:connectedDebugAndroidTest     # Compose UI tests on a running emulator/device
 ```
 
-CI (`.github/workflows/ci.yml`) runs `assembleDebug` and all unit tests. A second, non-blocking job
-builds the app together with the Proton Drive SDK module.
+CI mirrors these commands. `.github/workflows/pr-ci.yml` runs on every pull request with four required
+checks: "Lint (ktlint, detekt, Android Lint)", "Unit tests", "Instrumented tests (emulator)" and
+"Build debug APK". A fifth, non-blocking job builds the app together with the Proton Drive SDK module.
+`main-ci.yml` reruns the same checks on `main` and builds an unsigned release APK.
 
 ### Building with the Proton Drive SDK
 

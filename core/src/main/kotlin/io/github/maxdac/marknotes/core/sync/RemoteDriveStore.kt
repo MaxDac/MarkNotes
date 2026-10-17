@@ -12,7 +12,7 @@ data class RemoteEntry(
     val id: String,
     val isFolder: Boolean,
     val version: String,
-    val modifiedMillis: Long,
+    val modifiedMillis: Long
 )
 
 /**
