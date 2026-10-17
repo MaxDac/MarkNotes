@@ -6,6 +6,7 @@ import java.nio.file.Files
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -104,5 +105,34 @@ class LocalNoteStoreTest {
         assertEquals("a/n (copy).md", store.uniqueSibling("a/n.md", " (copy)"))
         store.write("a/n (copy).md", "y")
         assertEquals("a/n (copy) 2.md", store.uniqueSibling("a/n.md", " (copy)"))
+    }
+
+    @Test
+    fun moveNoteAndFolderBetweenFolders() {
+        store.write("a/n.md", "x")
+        store.write("a/sub/deep.md", "d")
+        store.createFolder("b")
+
+        assertEquals("b/n.md", store.move("a/n.md", "b"))
+        assertEquals("x", store.read("b/n.md"))
+        assertFalse(store.exists("a/n.md"))
+
+        assertEquals("b/sub", store.move("a/sub", "b"))
+        assertEquals("d", store.read("b/sub/deep.md"))
+
+        assertEquals("n.md", store.move("b/n.md", ""))
+        assertEquals(listOf("a", "b", "b/sub"), store.listFolders())
+    }
+
+    @Test
+    fun moveRejectsInvalidTargets() {
+        store.write("a/sub/n.md", "x")
+        store.write("b/n.md", "y")
+
+        assertThrows(IllegalArgumentException::class.java) { store.move("a", "a/sub") }
+        assertThrows(IllegalArgumentException::class.java) { store.move("a", "a") }
+        assertThrows(IOException::class.java) { store.move("b/n.md", "a/sub") }
+        assertThrows(IOException::class.java) { store.move("b/n.md", "missing") }
+        assertEquals("y", store.read("b/n.md"))
     }
 }

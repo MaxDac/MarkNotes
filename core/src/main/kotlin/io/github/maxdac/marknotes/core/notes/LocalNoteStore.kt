@@ -135,6 +135,34 @@ class LocalNoteStore(val root: File) {
         return newPath
     }
 
+    /**
+     * Moves a note or folder into [targetFolder] ("" = root), keeping its name. Returns the new path.
+     * A folder can't be moved into itself or one of its descendants.
+     */
+    fun move(path: String, targetFolder: String): String {
+        val normalized = NotePaths.normalize(path)
+        val target = NotePaths.normalize(targetFolder)
+        require(normalized.isNotEmpty()) { "Cannot move the root folder" }
+        val source = file(normalized)
+        val problem = when {
+            !source.exists() -> "$path does not exist"
+            !file(target).isDirectory -> "Folder ${target.ifEmpty { "/" }} does not exist"
+            else -> null
+        }
+        if (problem != null) throw IOException(problem)
+        require(target != normalized && !(source.isDirectory && NotePaths.isAncestor(normalized, target))) {
+            "Cannot move a folder into itself"
+        }
+        val newPath = NotePaths.join(target, NotePaths.name(normalized))
+        if (newPath == normalized) return newPath
+        if (exists(newPath)) throw IOException("\"${NotePaths.name(normalized)}\" already exists in the destination")
+        Files.move(source.toPath(), file(newPath).toPath())
+        return newPath
+    }
+
+    /** Lists every folder below the root (excluding the root itself), sorted by path. */
+    fun listFolders(): List<String> = listAll().filter { it.isFolder }.map { it.path }.sorted()
+
     /** Deletes a note or a folder (recursively). */
     fun delete(path: String) {
         val target = file(path)
