@@ -12,13 +12,30 @@ android {
         applicationId = "io.github.maxdac.marknotes"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-alpha"
+        // Release builds override these via -Pmarknotes.versionCode / -Pmarknotes.versionName.
+        versionCode = providers.gradleProperty("marknotes.versionCode").orNull?.toInt() ?: 1
+        versionName = providers.gradleProperty("marknotes.versionName").orNull ?: "0.1.0-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Release signing is only configured when the keystore env vars are present (set by release.yml).
+    val releaseKeystore = providers.environmentVariable("MARKNOTES_KEYSTORE_PATH").orNull
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = providers.environmentVariable("MARKNOTES_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("MARKNOTES_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("MARKNOTES_KEY_PASSWORD").get()
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (releaseKeystore != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
