@@ -1,5 +1,7 @@
 package io.github.maxdac.marknotes.ui.editor
 
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.maxdac.marknotes.AppContainer
@@ -15,11 +17,17 @@ import kotlinx.coroutines.withContext
 
 data class EditorState(
     val loaded: Boolean = false,
-    val text: String = "",
+    val value: TextFieldValue = TextFieldValue(),
     val preview: Boolean = false,
     val dirty: Boolean = false,
     val error: String? = null
-)
+) {
+    val text: String get() = value.text
+}
+
+private fun TextFieldValue.toEditorText() = EditorText(text, selection.start, selection.end)
+
+private fun EditorText.toTextFieldValue() = TextFieldValue(text, TextRange(selectionStart, selectionEnd))
 
 class EditorViewModel(private val container: AppContainer, val path: String) : ViewModel() {
     private val notes = container.notes
@@ -39,15 +47,33 @@ class EditorViewModel(private val container: AppContainer, val path: String) : V
         viewModelScope.launch {
             try {
                 val text = withContext(Dispatchers.IO) { if (notes.exists(path)) notes.read(path) else "" }
-                _state.value = _state.value.copy(loaded = true, text = text, dirty = false)
+                val selection = _state.value.value.selection
+                val value = TextFieldValue(
+                    text,
+                    TextRange(selection.start.coerceAtMost(text.length), selection.end.coerceAtMost(text.length))
+                )
+                _state.value = _state.value.copy(loaded = true, value = value, dirty = false)
             } catch (e: Exception) {
                 _state.value = _state.value.copy(loaded = true, error = e.message)
             }
         }
     }
 
-    fun onTextChange(text: String) {
-        _state.value = _state.value.copy(text = text, dirty = true)
+    fun onValueChange(value: TextFieldValue) {
+        val old = _state.value.value
+        val continued = MarkdownEditing.continueList(old.toEditorText(), value.toEditorText())
+        update(continued?.toTextFieldValue() ?: value)
+    }
+
+    /** Applies a toolbar formatting [action] to the current text and selection. */
+    fun applyFormat(action: (EditorText) -> EditorText) {
+        update(action(_state.value.value.toEditorText()).toTextFieldValue())
+    }
+
+    private fun update(value: TextFieldValue) {
+        val textChanged = value.text != _state.value.text
+        _state.value = _state.value.copy(value = value, dirty = _state.value.dirty || textChanged)
+        if (!textChanged) return
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             delay(AUTOSAVE_DELAY_MS)

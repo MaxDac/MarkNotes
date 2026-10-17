@@ -102,6 +102,30 @@ class MarkNotesFlowTest {
     }
 
     @Test
+    fun enterContinuesChecklistAndToolbarFormats() {
+        compose.onNodeWithTag(NEW_NOTE_FAB_TAG).performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("Todo")
+        compose.onNodeWithText("OK").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag(EDITOR_FIELD_TAG))
+
+        val editor = compose.onNodeWithTag(EDITOR_FIELD_TAG)
+        compose.onNodeWithContentDescription("Checkbox").performClick()
+        editor.performTextInput("milk")
+        editor.performTextInput("\n")
+        editor.performTextInput("eggs")
+        editor.performTextInput("\n")
+        editor.performTextInput("\n")
+        compose.onNodeWithContentDescription("Bold").performClick()
+        editor.performTextInput("done")
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Todo"))
+        val note = File(notesDir, "Todo.md")
+        compose.waitUntil(timeoutMillis = 5_000) { note.isFile && note.readText().isNotEmpty() }
+        assertEquals("- [ ] milk\n- [ ] eggs\n**done**", note.readText())
+    }
+
+    @Test
     fun repeatedBackFromSubfolderNeverLeavesBlankScreen() {
         compose.onNodeWithContentDescription("New folder").performClick()
         compose.onNode(hasSetTextAction()).performTextInput("Inbox")

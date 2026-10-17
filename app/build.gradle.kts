@@ -108,6 +108,14 @@ dependencies {
     implementation(libs.markwon.strikethrough)
     implementation(libs.markwon.tables)
     implementation(libs.markwon.tasklist)
+    implementation(libs.markwon.syntax.highlight) {
+        exclude(group = "org.jetbrains", module = "annotations-java5")
+    }
+    implementation(libs.prism4j) {
+        exclude(group = "org.jetbrains", module = "annotations-java5")
+    }
+    // Prism4j generates its grammar locator with a javac annotation processor (see CodeGrammars.java).
+    annotationProcessor(libs.prism4j.bundler)
     implementation(libs.dropbox.android)
     implementation(libs.msal)
     debugImplementation(libs.androidx.compose.ui.tooling)
