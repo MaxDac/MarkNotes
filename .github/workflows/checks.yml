@@ -108,15 +108,3 @@ jobs:
           name: app-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-
-  proton-sdk:
-    name: Proton Drive SDK module (experimental)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # The SDK is experimental; this job is informational and not a required check.
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-android-build
-      - name: Assemble with the Proton Drive SDK
-        run: ./gradlew :app:assembleDebug -Pmarknotes.protonSdk=true

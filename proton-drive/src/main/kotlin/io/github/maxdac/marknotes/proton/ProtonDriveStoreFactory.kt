@@ -1,33 +1,88 @@
 package io.github.maxdac.marknotes.proton
 
 import android.content.Context
-import io.github.maxdac.marknotes.core.auth.ProtonSession
+import android.util.Log
+import io.github.maxdac.marknotes.core.auth.ProtonAuthClient
+import io.github.maxdac.marknotes.core.sync.ProtonSessionSource
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStore
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStoreFactory
 import io.github.maxdac.marknotes.core.sync.RemoteUnavailableException
-import me.proton.drive.sdk.ProtonDriveClient
+import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import me.proton.core.crypto.android.pgp.GOpenPGPCrypto
+import me.proton.core.domain.entity.UserId
+import me.proton.drive.sdk.LoggerProvider
+import me.proton.drive.sdk.ProtonDriveSdk
+import me.proton.drive.sdk.entity.ClientCreateRequest
 
 /**
- * Creates the SDK-backed [RemoteDriveStore]. Instantiated by reflection from the app, so this module
- * stays optional.
- *
- * Remaining work: `ProtonDriveSdk.protonDriveClientCreate(...)` needs a protoncore `ApiProvider`
- * (authenticated with [ProtonSession]'s UID/tokens and the `x-pm-appversion` header) and
- * `UserAddressResolver` / `PublicAddressResolver` implementations able to unlock the user's address
- * keys with [ProtonSession.keyPassphrases]. See the README section "Finishing the Proton Drive SDK
- * wiring". Once a client exists, pass it to [ProtonDriveStore].
+ * Creates the SDK-backed [RemoteDriveStore]: wires the Drive SDK to a protoncore network stack that
+ * uses the app's Proton session, and to address-key resolvers that unlock keys with the passphrases
+ * derived at login.
  */
-class ProtonDriveStoreFactory(@Suppress("unused") private val context: Context) : RemoteDriveStoreFactory {
+class ProtonDriveStoreFactory(
+    context: Context,
+    baseUrl: String = ProtonAuthClient.DEFAULT_BASE_URL,
+    private val appVersion: String = ProtonAuthClient.APP_VERSION
+) : RemoteDriveStoreFactory {
+    private val context = context.applicationContext
 
-    override suspend fun create(session: ProtonSession, remoteFolderName: String): RemoteDriveStore {
-        val client = createClient(session)
-            ?: throw RemoteUnavailableException(
-                "Proton Drive sync is not fully wired yet in this build: the SDK client needs a protoncore " +
-                    "API provider and address key resolvers. See the README for the remaining steps.",
+    // Both the SDK and Retrofit resolve relative paths, so the base URL must end with '/'.
+    private val baseUrl = baseUrl.trimEnd('/') + "/"
+
+    override suspend fun create(sessions: ProtonSessionSource, remoteFolderName: String): RemoteDriveStore {
+        val session = sessions.current ?: throw RemoteUnavailableException("Not signed in to Proton.")
+        val userId = UserId(session.userIdOrUid)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val bridge = ProtonSessionBridge(sessions)
+            val apiProvider = createApiProvider(context, baseUrl, appVersion, bridge, scope)
+            val keys = ProtonAddressKeys(apiProvider, sessions, userId, GOpenPGPCrypto())
+            val client = ProtonDriveSdk.protonDriveClientCreate(
+                coroutineScope = scope,
+                userId = userId,
+                apiProvider = apiProvider,
+                request = ClientCreateRequest(
+                    baseUrl = baseUrl,
+                    loggerProvider = ProtonDriveSdk.loggerProvider(::log),
+                    // SQLite database for the SDK's node/metadata cache.
+                    cachePath = File(context.cacheDir, "proton-drive").apply { mkdirs() }
+                        .resolve("cache.sqlite").absolutePath
+                ),
+                userAddressResolver = keys,
+                publicAddressResolver = keys
             )
-        return ProtonDriveStore(client, remoteFolderName)
+            return ProtonDriveStore(client, remoteFolderName, onClose = { scope.cancel() })
+        } catch (e: CancellationException) {
+            scope.cancel()
+            throw e
+        } catch (e: RemoteUnavailableException) {
+            scope.cancel()
+            throw e
+        } catch (e: LinkageError) {
+            scope.cancel()
+            throw RemoteUnavailableException("The Proton Drive SDK native library isn't available on this device.", e)
+        } catch (e: Exception) {
+            scope.cancel()
+            throw RemoteUnavailableException("Couldn't start the Proton Drive SDK: ${e.message}", e)
+        }
     }
 
-    @Suppress("UNUSED_PARAMETER", "RedundantSuspendModifier")
-    private suspend fun createClient(session: ProtonSession): ProtonDriveClient? = null
+    private fun log(level: LoggerProvider.Level, category: String, message: String) {
+        val priority = when (level) {
+            LoggerProvider.Level.VERBOSE, LoggerProvider.Level.DEBUG -> return
+            LoggerProvider.Level.INFO -> Log.INFO
+            LoggerProvider.Level.WARN -> Log.WARN
+            LoggerProvider.Level.ERROR -> Log.ERROR
+        }
+        Log.println(priority, TAG, "[$category] $message")
+    }
+
+    private companion object {
+        const val TAG = "ProtonDriveSdk"
+    }
 }
