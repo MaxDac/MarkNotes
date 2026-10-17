@@ -14,6 +14,7 @@ serializationJson = "1.11.0"
 coroutines = "1.11.0"
 bcrypt = "0.10.2"
 markwon = "4.6.2"
+prism4j = "2.0.0"
 dropbox = "8.0.2"
 msal = "8.5.0"
 junit = "4.13.2"
@@ -54,6 +55,9 @@ markwon-core = { group = "io.noties.markwon", name = "core", version.ref = "mark
 markwon-strikethrough = { group = "io.noties.markwon", name = "ext-strikethrough", version.ref = "markwon" }
 markwon-tables = { group = "io.noties.markwon", name = "ext-tables", version.ref = "markwon" }
 markwon-tasklist = { group = "io.noties.markwon", name = "ext-tasklist", version.ref = "markwon" }
+markwon-syntax-highlight = { group = "io.noties.markwon", name = "syntax-highlight", version.ref = "markwon" }
+prism4j = { group = "io.noties", name = "prism4j", version.ref = "prism4j" }
+prism4j-bundler = { group = "io.noties", name = "prism4j-bundler", version.ref = "prism4j" }
 dropbox-android = { group = "com.dropbox.core", name = "dropbox-android-sdk", version.ref = "dropbox" }
 msal = { group = "com.microsoft.identity.client", name = "msal", version.ref = "msal" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

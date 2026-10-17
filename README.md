@@ -13,7 +13,10 @@ Simple Android markdown notes app with folders and sync to Proton Drive (unoffic
 - **Folder system**: create, open, rename, delete and **move** notes and folders (item menu → "Move to…").
   A navigation drawer shows the whole folder tree so you can jump straight to any folder.
 - **Editor**: raw markdown editing with a toggle to a rendered preview (Markwon: tables, strikethrough,
-  task lists). Changes are autosaved (debounced, and flushed when leaving the editor).
+  task lists, syntax-highlighted fenced code blocks via Prism4j). A formatting toolbar above the keyboard
+  inserts bold, italic, strikethrough, headings, bullet/numbered lists, checkboxes, quotes, inline code,
+  code blocks and links. Pressing Enter on a list, checkbox or quote line continues it on the next line;
+  Enter on an empty item ends the list. Changes are autosaved (debounced, and flushed when leaving the editor).
 - **Appearance** (Settings): theme **System** (default), **Light** or **Dark**, and an accent colour chosen
   from 8 palettes (Blue, Teal, Green, Lime, Amber, Orange, Red, Purple) or **Dynamic** (Material You,
   Android 12+, the default where available).
