@@ -90,10 +90,17 @@ jobs:
           MARKNOTES_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           MARKNOTES_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           MARKNOTES_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          # Optional; without them Dropbox/OneDrive show as not configured in the release APK.
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          MSAL_CLIENT_ID: ${{ secrets.MSAL_CLIENT_ID }}
+          MSAL_SIGNATURE_HASH: ${{ secrets.MSAL_RELEASE_SIGNATURE_HASH }}
         run: >-
           ./gradlew :app:assembleRelease
           -Pmarknotes.versionName="$VERSION"
           -Pmarknotes.versionCode="$VERSION_CODE"
+          -Pmarknotes.dropboxAppKey="$DROPBOX_APP_KEY"
+          -Pmarknotes.msalClientId="$MSAL_CLIENT_ID"
+          -Pmarknotes.msalSignatureHash="$MSAL_SIGNATURE_HASH"
       - name: Prepare release assets
         run: |
           mkdir -p dist

@@ -24,8 +24,10 @@ espresso = "3.7.0"
 ktlintPlugin = "14.2.0"
 ktlint = "1.8.0"
 detekt = "1.23.8"
-# Experimental Proton Drive SDK (Kotlin bindings over the C# SDK). Only used by :proton-drive.
+# Proton Drive SDK (Kotlin bindings over the C# SDK). Only used by :proton-drive.
 protonDriveSdk = "0.31.1"
+# Proton core libraries the SDK is built against (network stack for its ApiProvider, OpenPGP for address keys).
+protonCore = "36.6.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -66,6 +68,12 @@ androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-te
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 kotlin-gradle-plugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
 proton-drive-sdk = { group = "me.proton.drive", name = "sdk", version.ref = "protonDriveSdk" }
+proton-core-domain = { group = "me.proton.core", name = "domain", version.ref = "protonCore" }
+proton-core-network-data = { group = "me.proton.core", name = "network-data", version.ref = "protonCore" }
+proton-core-network-domain = { group = "me.proton.core", name = "network-domain", version.ref = "protonCore" }
+proton-core-crypto-android = { group = "me.proton.core", name = "crypto-android", version.ref = "protonCore" }
+proton-core-crypto-common = { group = "me.proton.core", name = "crypto-common", version.ref = "protonCore" }
+proton-core-util-kotlin = { group = "me.proton.core", name = "util-kotlin", version.ref = "protonCore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

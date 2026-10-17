@@ -16,6 +16,10 @@ android {
         versionCode = providers.gradleProperty("marknotes.versionCode").orNull?.toInt() ?: 1
         versionName = providers.gradleProperty("marknotes.versionName").orNull ?: "0.1.0-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // The Proton Drive SDK ships large native libraries: devices (arm64) and emulators (x86_64) only.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
 
         // Cloud provider registrations (see README). Without them the provider shows as unavailable.
         fun providerProperty(name: String) =
@@ -85,10 +89,8 @@ kotlin {
 
 dependencies {
     implementation(project(":core"))
-    // Optional Proton Drive SDK bridge, only present when built with -Pmarknotes.protonSdk=true.
-    if (findProject(":proton-drive") != null) {
-        implementation(project(":proton-drive"))
-    }
+    // Proton Drive SDK bridge (GPLv3, ships NativeAOT native libraries).
+    implementation(project(":proton-drive"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
