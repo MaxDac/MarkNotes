@@ -15,6 +15,18 @@ android {
         versionCode = 1
         versionName = "0.1.0-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Cloud provider registrations (see README). Without them the provider shows as unavailable.
+        fun providerProperty(name: String) =
+            providers.gradleProperty("marknotes.$name").orNull?.takeIf { it.isNotBlank() } ?: "unconfigured"
+        val dropboxAppKey = providerProperty("dropboxAppKey")
+        val msalClientId = providerProperty("msalClientId")
+        val msalSignatureHash = providerProperty("msalSignatureHash")
+        buildConfigField("String", "DROPBOX_APP_KEY", "\"$dropboxAppKey\"")
+        buildConfigField("String", "MSAL_CLIENT_ID", "\"$msalClientId\"")
+        buildConfigField("String", "MSAL_SIGNATURE_HASH", "\"$msalSignatureHash\"")
+        manifestPlaceholders["dropboxAppKey"] = dropboxAppKey
+        manifestPlaceholders["msalSignatureHash"] = msalSignatureHash
     }
 
     buildTypes {
@@ -79,6 +91,8 @@ dependencies {
     implementation(libs.markwon.strikethrough)
     implementation(libs.markwon.tables)
     implementation(libs.markwon.tasklist)
+    implementation(libs.dropbox.android)
+    implementation(libs.msal)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 

@@ -1,35 +1,49 @@
 # MarkNotes
 
-Simple Android markdown notes app with folders and Proton Drive sync (unofficial).
+Simple Android markdown notes app with folders and sync to Proton Drive (unofficial), Dropbox and OneDrive.
 
 > **This is a third-party application not officially supported by Proton.**
 > MarkNotes is a personal, non-commercial project. It is not affiliated with or endorsed by Proton AG,
 > and it does not use any Proton logos or branding.
 
-## Features (v1)
+## Features
 
 - **Offline-first notes**: every note is a `.md` file in a folder tree inside the app's private storage
   (`filesDir/notes`). Folders map to real directories.
-- **Folder browser**: create, open, rename and delete notes and folders.
+- **Folder system**: create, open, rename, delete and **move** notes and folders (item menu → "Move to…").
+  A navigation drawer shows the whole folder tree so you can jump straight to any folder.
 - **Editor**: raw markdown editing with a toggle to a rendered preview (Markwon: tables, strikethrough,
   task lists). Changes are autosaved (debounced, and flushed when leaving the editor).
-- **Proton Drive two-way sync** with a folder in *My files* (default `MarkNotes`):
-  - runs on app launch (when logged in) and when you tap **Sync now**; there is no background or periodic polling;
-  - only folders and `.md` files are synced;
-  - conflicts (changed on both sides) show both versions and let you **keep local**, **keep remote** or
-    **keep both** (the remote version is saved as `name (conflicted copy).md`).
-- **Login**: Proton SRP password login with TOTP two-factor authentication. The session is stored
-  encrypted with an Android Keystore AES-GCM key; tokens are refreshed before each sync; logout revokes
-  the session. CAPTCHA / human verification is not supported: you get a clear error instead.
+- **Appearance** (Settings): theme **System** (default), **Light** or **Dark**, and an accent colour chosen
+  from 8 palettes (Blue, Teal, Green, Lime, Amber, Orange, Red, Purple) or **Dynamic** (Material You,
+  Android 12+, the default where available).
+- **Multi-drive two-way sync**: connect any number of **Proton Drive**, **Dropbox** and **OneDrive** accounts
+  (Settings → Add drive). Every drive mirrors the same local note tree:
+  - for Dropbox and OneDrive you browse to a folder and can optionally create a root folder inside it
+    (default `MarkNotes`); for Proton Drive you pick a folder name in *My files*;
+  - sync runs on app launch and when you tap **Sync now**; there is no background or periodic polling;
+  - only folders and `.md` files are synced. Each drive keeps its own sync state, plus a small manifest at
+    `.marknotes/manifest.json` on the drive (content hashes and the device that last wrote each note);
+  - when only one side changed, that version wins. Deletions and moves propagate (a move is a delete
+    plus a create);
+  - edits made on both sides are merged line by line (a three-way merge against the last synced version).
+    Only overlapping edits become **conflicts**. For each conflicting change you pick **Mine**, **Theirs**,
+    **Both** or **Neither**, or you edit the merged text by hand (with git-style `<<<<<<<` markers). You can
+    also keep either whole version, or keep both files (the remote one is saved as `name (conflicted copy).md`).
+- **Proton login**: Proton SRP password login with TOTP two-factor authentication. CAPTCHA / human
+  verification is not supported: you get a clear error instead.
+- **Dropbox / OneDrive login**: the official Dropbox SDK (OAuth 2 PKCE) and Microsoft MSAL.
+- Sessions and tokens are stored encrypted with an Android Keystore AES-GCM key. Disconnecting a drive
+  signs you out, and revokes the session where the provider supports it.
 
-Out of scope for v1: search, tags, attachments, background sync, widgets, local encryption.
+Out of scope: search, tags, attachments, background sync, widgets, local encryption.
 
 ## Project layout
 
 | Module | What it contains |
 | --- | --- |
-| `:core` | Pure Kotlin/JVM: local note store, sync engine, `RemoteDriveStore` interface, Proton SRP + auth client. Fully unit tested. |
-| `:app` | Android app: Jetpack Compose + Material 3, Navigation Compose, MVVM with `StateFlow`, Room (sync metadata only), manual DI. |
+| `:core` | Pure Kotlin/JVM: local note store, three-way merge, sync engine (single and multi-drive), `RemoteDriveStore` interface, OneDrive (Microsoft Graph) store, Proton SRP + auth client. Fully unit tested. |
+| `:app` | Android app: Jetpack Compose + Material 3, Navigation Compose, MVVM with `StateFlow`, Room (drive accounts and sync metadata), manual DI, Dropbox store, Dropbox/MSAL sign-in. |
 | `:proton-drive` | Optional bridge to the experimental [Proton Drive SDK](https://github.com/ProtonDriveApps/sdk). Only included with `-Pmarknotes.protonSdk=true`. |
 
 The sync engine only talks to the `RemoteDriveStore` interface, so SDK changes stay contained in
@@ -53,10 +67,32 @@ checks: "Lint (ktlint, detekt, Android Lint)", "Unit tests", "Instrumented tests
 "Build debug APK". A fifth, non-blocking job builds the app together with the Proton Drive SDK module.
 `main-ci.yml` reruns the same checks on `main` and builds an unsigned release APK.
 
+### Configuring Dropbox and OneDrive
+
+Both providers need app registrations. Without them the build still works, and "Add drive" shows the
+provider as not configured. Put the values in `~/.gradle/gradle.properties` (or pass them with `-P`):
+
+```properties
+marknotes.dropboxAppKey=<Dropbox app key>
+marknotes.msalClientId=<Azure application (client) ID>
+marknotes.msalSignatureHash=<base64 SHA-1 of the signing certificate>
+```
+
+- **Dropbox**: create an app in the [Dropbox App Console](https://www.dropbox.com/developers/apps) with
+  "Full Dropbox" access and the scopes `account_info.read`, `files.metadata.read`, `files.content.read` and
+  `files.content.write`. PKCE needs no app secret. The SDK's `AuthActivity` handles the redirect
+  (scheme `db-<app key>`).
+- **OneDrive**: register an app in [Microsoft Entra](https://entra.microsoft.com) for personal Microsoft
+  accounts and organizational accounts, with the delegated permissions `Files.ReadWrite` and `User.Read`.
+  Add an **Android** platform with package `io.github.maxdac.marknotes` and the signature hash. Azure then
+  shows the redirect URI `msauth://io.github.maxdac.marknotes/<URL-encoded hash>`, which is the one
+  MarkNotes uses. To get the debug hash, run
+  `keytool -exportcert -alias androiddebugkey -keystore ~/.android/debug.keystore | openssl sha1 -binary | openssl base64`.
+
 ### Building with the Proton Drive SDK
 
-The default build does **not** include the SDK. The app then works fully offline, and the settings
-screen explains that sync is unavailable. To include the SDK bridge:
+The default build does **not** include the SDK. Proton Drive is then shown as unavailable in
+"Add drive"; Dropbox and OneDrive are not affected. To include the SDK bridge:
 
 ```sh
 ./gradlew :app:assembleDebug -Pmarknotes.protonSdk=true

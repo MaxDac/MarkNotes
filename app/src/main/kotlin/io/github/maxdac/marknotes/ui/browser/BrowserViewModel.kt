@@ -16,6 +16,11 @@ class BrowserViewModel(private val container: AppContainer, val folder: String) 
     private val _entries = MutableStateFlow<List<NoteEntry>>(emptyList())
     val entries: StateFlow<List<NoteEntry>> = _entries
 
+    private val _folders = MutableStateFlow<List<String>>(emptyList())
+
+    /** Every folder of the note tree, used by the folder drawer and the move dialog. */
+    val folders: StateFlow<List<String>> = _folders
+
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
@@ -29,8 +34,9 @@ class BrowserViewModel(private val container: AppContainer, val folder: String) 
 
     fun refresh() {
         viewModelScope.launch {
-            _entries.value = withContext(Dispatchers.IO) {
-                if (notes.isFolder(folder) || folder.isEmpty()) notes.list(folder) else emptyList()
+            withContext(Dispatchers.IO) {
+                _entries.value = if (notes.isFolder(folder) || folder.isEmpty()) notes.list(folder) else emptyList()
+                _folders.value = notes.listFolders()
             }
         }
     }
@@ -43,6 +49,8 @@ class BrowserViewModel(private val container: AppContainer, val folder: String) 
     fun createFolder(name: String) = act { notes.createFolder(folder, name) }
 
     fun rename(entry: NoteEntry, newName: String) = act { notes.rename(entry.path, newName) }
+
+    fun move(entry: NoteEntry, targetFolder: String) = act { notes.move(entry.path, targetFolder) }
 
     fun delete(entry: NoteEntry) = act { notes.delete(entry.path) }
 
@@ -59,7 +67,8 @@ class BrowserViewModel(private val container: AppContainer, val folder: String) 
             } catch (e: Exception) {
                 _error.value = e.message ?: "Operation failed"
             }
-            refresh()
+            // Refreshes every open folder screen, since moves change two folders.
+            container.notifyLocalChanged()
         }
     }
 }

@@ -14,6 +14,8 @@ serializationJson = "1.11.0"
 coroutines = "1.11.0"
 bcrypt = "0.10.2"
 markwon = "4.6.2"
+dropbox = "8.0.2"
+msal = "8.5.0"
 junit = "4.13.2"
 androidxTestExtJunit = "1.3.0"
 androidxTestRunner = "1.7.0"
@@ -50,6 +52,8 @@ markwon-core = { group = "io.noties.markwon", name = "core", version.ref = "mark
 markwon-strikethrough = { group = "io.noties.markwon", name = "ext-strikethrough", version.ref = "markwon" }
 markwon-tables = { group = "io.noties.markwon", name = "ext-tables", version.ref = "markwon" }
 markwon-tasklist = { group = "io.noties.markwon", name = "ext-tasklist", version.ref = "markwon" }
+dropbox-android = { group = "com.dropbox.core", name = "dropbox-android-sdk", version.ref = "dropbox" }
+msal = { group = "com.microsoft.identity.client", name = "msal", version.ref = "msal" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }

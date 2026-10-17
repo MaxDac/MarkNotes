@@ -11,6 +11,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // MSAL (OneDrive sign-in) depends on Microsoft's display-mask library, only published here.
+        maven("https://pkgs.dev.azure.com/MicrosoftDeviceSDK/DuoSDK-Public/_packaging/Duo-SDK-Feed/maven/v1") {
+            content { includeGroup("com.microsoft.device.display") }
+        }
     }
 }
 
