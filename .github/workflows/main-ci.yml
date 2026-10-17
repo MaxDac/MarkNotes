@@ -1,0 +1,38 @@
+name: Main CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+jobs:
+  checks:
+    name: Checks
+    uses: ./.github/workflows/pr-ci.yml
+
+  release-build:
+    name: Release build (unsigned APK)
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-android-build
+      - name: Build release APK
+        run: ./gradlew assembleRelease
+      - name: Upload release APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-release-unsigned
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
