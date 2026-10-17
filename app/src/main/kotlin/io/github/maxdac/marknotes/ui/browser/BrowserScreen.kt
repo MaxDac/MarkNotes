@@ -114,7 +114,9 @@ fun BrowserScreen(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            FolderDrawer(sortedFolders, current = folder) { target ->
+            // A closed drawer stays composed; skip its items so they don't duplicate the list in semantics.
+            val showTree = drawerState.isOpen || drawerState.isAnimationRunning
+            FolderDrawer(if (showTree) sortedFolders else null, current = folder) { target ->
                 scope.launch { drawerState.close() }
                 if (target != folder) onJumpToFolder(target)
             }
@@ -293,7 +295,11 @@ private fun BrowserDialogs(
 
 /** Folder tree; folders are collapsed except the ancestors of [current]. */
 @Composable
-private fun FolderDrawer(folders: List<String>, current: String, onSelect: (String) -> Unit) {
+private fun FolderDrawer(folders: List<String>?, current: String, onSelect: (String) -> Unit) {
+    if (folders == null) {
+        ModalDrawerSheet { }
+        return
+    }
     var expanded by rememberSaveable(current) {
         mutableStateOf(generateSequence(current.ifEmpty { null }) { NotePaths.parent(it).ifEmpty { null } }.toSet())
     }
