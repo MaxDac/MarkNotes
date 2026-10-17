@@ -37,7 +37,8 @@ The sync engine only talks to the `RemoteDriveStore` interface, so SDK changes s
 
 ## Build
 
-Requirements: JDK 17 and the Android SDK (compile SDK 35). The Gradle wrapper (8.10.2) is included:
+Requirements: JDK 17 and the Android SDK (compile SDK 35). The app runs on Android 10+ (minSdk 29,
+required by the Proton Drive SDK). The Gradle wrapper (8.10.2) is included:
 
 ```sh
 ./gradlew assembleDebug test
