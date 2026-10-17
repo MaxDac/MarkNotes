@@ -98,6 +98,14 @@ marknotes.msalSignatureHash=<base64 SHA-1 of the signing certificate>
   shows the redirect URI `msauth://io.github.maxdac.marknotes/<URL-encoded hash>`, which is the one
   MarkNotes uses. To get the debug hash, run
   `keytool -exportcert -alias androiddebugkey -keystore ~/.android/debug.keystore | openssl sha1 -binary | openssl base64`.
+  On Windows without openssl, copy the `SHA1` line printed by `.\gradlew :app:signingReport` and convert it
+  in PowerShell:
+  `[Convert]::ToBase64String([byte[]]('AA:BB:...' -split ':' | ForEach-Object { [Convert]::ToByte($_, 16) }))`.
+  The hash depends on the signing key, so an APK signed with a different key (another PC's debug key, or
+  the release key) fails to sign in to OneDrive. Add one Android platform entry per key in Entra.
+- **Release builds**: `release.yml` reads the repository secrets `DROPBOX_APP_KEY`, `MSAL_CLIENT_ID` and
+  `MSAL_RELEASE_SIGNATURE_HASH` (the hash of the release keystore). If they are missing, the release APK
+  shows both providers as not configured.
 
 ### Building with the Proton Drive SDK
 
