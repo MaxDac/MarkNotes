@@ -157,7 +157,19 @@ MarkNotes follows Proton's rules for third-party personal projects:
   yet**. That is acceptable for a personal project, but it should be added before wider use.
 - Accounts with a separate mailbox password (two-password mode) and FIDO2-only 2FA are not supported in v1.
 
+## License
+
+MarkNotes is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md).
+You may use, copy, fork, and modify the code for any noncommercial purpose (personal use, study,
+research, hobby projects, and use by charities, educational or public institutions). Any
+commercial use is not permitted.
+
+Note: this is not an OSI-approved open source license, since it restricts commercial use.
+
 ## Licensing notes
+
+The license above covers this project's own code. Third-party dependencies remain under their own
+licenses.
 
 The Proton Drive SDK is GPLv3, so builds that include `:proton-drive` must respect the GPLv3. The
 SRP implementation in `:core` was written for this project, following the public protocol as
