@@ -90,7 +90,40 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 ```
 
-## 5. Release builds
+## 5. Web and desktop apps
+
+[marknotes-web](https://github.com/MaxDac/marknotes-web) (Phoenix LiveView) and
+[marknotes-electron](https://github.com/MaxDac/marknotes-electron) reuse **the same Dropbox app and Entra
+app**. Every client then uses the same app key and client ID, and all of them work on the same Dropbox and
+OneDrive files. Each client type only needs its own redirect URIs.
+
+**Dropbox** (App Console → your app → **Settings**):
+
+1. Under **OAuth 2 → Allow public clients (Implicit Grant & PKCE)**, select **Allow**.
+2. Under **OAuth 2 → Redirect URIs**, add:
+   - `https://marknotes-web.fly.dev/oauth/dropbox` (web, production)
+   - `http://localhost:4000/oauth/dropbox` (web, local `mix phx.server`)
+   - `http://127.0.0.1/oauth/dropbox` (desktop loopback; Dropbox ignores the port for loopback URIs)
+
+**Entra** (your app → **Authentication** → **Add Redirect URI**):
+
+1. **Single-page application**: `https://marknotes-web.fly.dev/oauth/onedrive` and
+   `http://localhost:4000/oauth/onedrive` (MSAL.js in the browser).
+2. **Mobile and desktop applications**: `http://localhost` (MSAL Node with a loopback redirect, any port).
+
+The Android, SPA and desktop entries can coexist on the same registration. Supported accounts and API
+permissions stay as in step 3.
+
+**Secrets:**
+
+| App | Where | Names |
+| --- | --- | --- |
+| Web | Fly secrets (`fly secrets set DROPBOX_APP_KEY=... MSAL_CLIENT_ID=... -a marknotes-web`) | `DROPBOX_APP_KEY`, `MSAL_CLIENT_ID` |
+| Desktop | `marknotes-electron` repository secrets (read by `release.yml`) | `DROPBOX_APP_KEY`, `MSAL_CLIENT_ID` |
+
+No signature hash is needed outside Android.
+
+## 6. Release builds
 
 `.github/workflows/release.yml` reads these repository secrets. If any are missing, the release APK shows the
 matching provider as not configured.
