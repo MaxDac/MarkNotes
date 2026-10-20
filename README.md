@@ -83,7 +83,8 @@ Signing uses the repository secrets `RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE
 ### Configuring Dropbox and OneDrive
 
 Both providers need app registrations. Without them the build still works, and "Add drive" shows the
-provider as not configured. Put the values in `~/.gradle/gradle.properties` (or pass them with `-P`):
+provider as not configured. See [docs/cloud-providers.md](docs/cloud-providers.md) for the step-by-step
+setup. Put the values in `~/.gradle/gradle.properties` (or pass them with `-P`):
 
 ```properties
 marknotes.dropboxAppKey=<Dropbox app key>
