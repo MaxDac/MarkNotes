@@ -1,4 +1,4 @@
-# Configuring Dropbox and OneDrive
+# Configuring cloud providers (Dropbox, OneDrive, Proton Drive)
 
 MarkNotes signs in to Dropbox with the official Dropbox SDK (OAuth 2 PKCE) and to OneDrive with Microsoft MSAL.
 Both need an app registration. Without one the build still works, but "Add drive" shows the provider as
@@ -103,13 +103,15 @@ OneDrive files. Each client type only needs its own redirect URIs.
 2. Under **OAuth 2 → Redirect URIs**, add:
    - `https://marknotes-web.fly.dev/oauth/dropbox` (web, production)
    - `http://localhost:4000/oauth/dropbox` (web, local `mix phx.server`)
-   - `http://127.0.0.1/oauth/dropbox` (desktop loopback; Dropbox ignores the port for loopback URIs)
+   - `http://127.0.0.1/oauth/dropbox` (desktop PKCE loopback on a random port; Dropbox ignores the port for
+     loopback URIs)
 
 **Entra** (your app → **Authentication** → **Add Redirect URI**):
 
 1. **Single-page application**: `https://marknotes-web.fly.dev/oauth/onedrive` and
    `http://localhost:4000/oauth/onedrive` (MSAL.js in the browser).
-2. **Mobile and desktop applications**: `http://localhost` (MSAL Node with a loopback redirect, any port).
+2. **Mobile and desktop applications**: `http://localhost` (MSAL Node with a loopback redirect on a random
+   port). The desktop app requests `Files.ReadWrite User.Read offline_access`.
 
 The Android, SPA and desktop entries can coexist on the same registration. Supported accounts and API
 permissions stay as in step 3.
@@ -119,11 +121,22 @@ permissions stay as in step 3.
 | App | Where | Names |
 | --- | --- | --- |
 | Web | Fly secrets (`fly secrets set DROPBOX_APP_KEY=... MSAL_CLIENT_ID=... -a marknotes-web`) | `DROPBOX_APP_KEY`, `MSAL_CLIENT_ID` |
-| Desktop | `marknotes-electron` repository secrets (read by `release.yml`) | `DROPBOX_APP_KEY`, `MSAL_CLIENT_ID` |
+| Desktop | `marknotes-electron` repository secrets, read at build time by `release.yml`; for `npm run dev`, set them as environment variables | `DROPBOX_APP_KEY`, `MSAL_CLIENT_ID` |
 
 No signature hash is needed outside Android.
 
-## 6. Release builds
+## 6. Proton Drive (all clients)
+
+Proton Drive needs no app registration and no secrets on Android, web or desktop.
+
+- **Login**: Proton SRP with the account password, plus a TOTP code when 2FA is enabled. CAPTCHA/human
+  verification, two-password mode and FIDO2-only accounts aren't supported; the app shows a clear error
+  for them.
+- **Every request** sends the header `x-pm-appversion: external-drive-marknotes@0.1.0-alpha`.
+- **Login screen** shows "This is a third-party application not officially supported by Proton."
+- **No Proton branding** (logos or similar) anywhere in the apps.
+
+## 7. Release builds
 
 `.github/workflows/release.yml` reads these repository secrets. If any are missing, the release APK shows the
 matching provider as not configured.
