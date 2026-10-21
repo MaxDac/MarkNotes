@@ -13,6 +13,11 @@ on:
         required: true
         default: true
         type: boolean
+      allow-missing-providers:
+        description: Allow releasing without DROPBOX_APP_KEY / MSAL_CLIENT_ID / MSAL_RELEASE_SIGNATURE_HASH (providers show as not configured)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -74,6 +79,36 @@ jobs:
       VERSION_CODE: ${{ needs.validate.outputs.version-code }}
     steps:
       - uses: actions/checkout@v7
+      - name: Check cloud provider secrets
+        env:
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          MSAL_CLIENT_ID: ${{ secrets.MSAL_CLIENT_ID }}
+          MSAL_RELEASE_SIGNATURE_HASH: ${{ secrets.MSAL_RELEASE_SIGNATURE_HASH }}
+          ALLOW_MISSING: ${{ inputs.allow-missing-providers }}
+        run: |
+          level=error
+          if [ "$ALLOW_MISSING" = "true" ]; then level=warning; fi
+          missing=0
+          dropbox=configured
+          onedrive=configured
+          if [ -z "$DROPBOX_APP_KEY" ]; then
+            echo "::$level::DROPBOX_APP_KEY secret is not set; Dropbox will show as not configured in the release APK."
+            missing=1
+            dropbox="not configured"
+          fi
+          for name in MSAL_CLIENT_ID MSAL_RELEASE_SIGNATURE_HASH; do
+            if [ -z "${!name}" ]; then
+              echo "::$level::$name secret is not set; OneDrive will show as not configured in the release APK."
+              missing=1
+              onedrive="not configured"
+            fi
+          done
+          echo "DROPBOX_STATUS=$dropbox" >> "$GITHUB_ENV"
+          echo "ONEDRIVE_STATUS=$onedrive" >> "$GITHUB_ENV"
+          if [ "$missing" = 1 ] && [ "$level" = error ]; then
+            echo "::error::Set the missing secrets (see README, Releasing) or re-run with allow-missing-providers."
+            exit 1
+          fi
       - uses: ./.github/actions/setup-android-build
       - name: Decode signing keystore
         env:
@@ -101,12 +136,44 @@ jobs:
           -Pmarknotes.dropboxAppKey="$DROPBOX_APP_KEY"
           -Pmarknotes.msalClientId="$MSAL_CLIENT_ID"
           -Pmarknotes.msalSignatureHash="$MSAL_SIGNATURE_HASH"
+      - name: Remove signing keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+      - name: Verify APK signature
+        env:
+          EXPECTED_CERT_SHA256: ${{ vars.RELEASE_CERT_SHA256 }}
+        run: |
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          build_tools=$(find "$sdk/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          certs=$("$build_tools/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk)
+          echo "$certs"
+          actual=$(echo "$certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ': ' | tr 'A-F' 'a-f')
+          if [ -z "$actual" ]; then
+            echo "::error::Could not read the signer certificate SHA-256 digest."
+            exit 1
+          fi
+          echo "CERT_SHA256=$actual" >> "$GITHUB_ENV"
+          if [ -z "$EXPECTED_CERT_SHA256" ]; then
+            echo "::warning::Repository variable RELEASE_CERT_SHA256 is not set; skipping signer pinning (actual: $actual)."
+            exit 0
+          fi
+          expected=$(echo "$EXPECTED_CERT_SHA256" | tr -d ': ' | tr 'A-F' 'a-f')
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::Signer certificate SHA-256 $actual does not match RELEASE_CERT_SHA256 $expected."
+            exit 1
+          fi
+          echo "Signer certificate matches RELEASE_CERT_SHA256."
       - name: Prepare release assets
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk "dist/marknotes-$VERSION.apk"
           (cd dist && sha256sum "marknotes-$VERSION.apk" > "marknotes-$VERSION.apk.sha256")
-          rm -f "$MARKNOTES_KEYSTORE_PATH"
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: marknotes-${{ env.VERSION }}
+          path: dist/
+          if-no-files-found: error
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -119,3 +186,23 @@ jobs:
             --title "MarkNotes $VERSION" \
             --generate-notes \
             "${flags[@]}"
+      - name: Write job summary
+        if: always()
+        env:
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          {
+            echo "## MarkNotes $VERSION"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Version | \`$VERSION\` |"
+            echo "| versionCode | \`$VERSION_CODE\` |"
+            echo "| Pre-release | $PRERELEASE |"
+            echo "| Signer cert SHA-256 | \`${CERT_SHA256:-unknown}\` |"
+            echo "| Dropbox | ${DROPBOX_STATUS:-unknown} |"
+            echo "| OneDrive | ${ONEDRIVE_STATUS:-unknown} |"
+            if [ -f "dist/marknotes-$VERSION.apk.sha256" ]; then
+              echo "| APK SHA-256 | \`$(cut -d' ' -f1 "dist/marknotes-$VERSION.apk.sha256")\` |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
