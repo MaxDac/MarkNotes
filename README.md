@@ -69,16 +69,60 @@ CI mirrors these commands. The checks live in the reusable `.github/workflows/ch
 checks, "Lint (ktlint, detekt, Android Lint)", "Unit tests", "Instrumented tests (emulator)" and
 "Build debug APK". The debug APK always includes the Proton Drive SDK.
 `pr-ci.yml` runs them on every pull request, and `main-ci.yml` reruns them on `main` and builds an unsigned
-release APK.
+release APK. Pull requests also run "Dependency review" (fails on high-severity vulnerabilities in added
+dependencies) and "actionlint" (workflow linting). `codeql.yml` runs CodeQL for Kotlin/Java and GitHub
+Actions on pull requests, on `main` and weekly. `dependabot-automerge.yml` enables squash auto-merge for
+Dependabot patch and minor updates (never majors or `me.proton.core`), so they merge once the checks pass.
 
 ### Releasing
 
-`release.yml` is started manually (Actions → Release → Run workflow) with a `version` (`X.Y.Z`, default
-`0.1.0`) and a `prerelease` flag. It runs the checks, builds a signed APK (`versionName` = version,
-`versionCode` = `X*10000 + Y*100 + Z`), and publishes a `vX.Y.Z` GitHub Release with the APK and its SHA-256.
-Signing uses the repository secrets `RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`,
-`RELEASE_KEY_ALIAS` and `RELEASE_KEY_PASSWORD`. Locally, `assembleRelease` signs only when
-`MARKNOTES_KEYSTORE_PATH` (plus the matching password/alias env vars) is set; otherwise it stays unsigned.
+Releases are published only as signed APKs on GitHub Releases.
+
+**Repository secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+| --- | --- |
+| `RELEASE_KEYSTORE_BASE64` | The release keystore, base64-encoded (`base64 -w0 release.keystore`) |
+| `RELEASE_KEYSTORE_PASSWORD` | Keystore password |
+| `RELEASE_KEY_ALIAS` | Alias of the signing key |
+| `RELEASE_KEY_PASSWORD` | Key password |
+| `DROPBOX_APP_KEY` | Dropbox app key |
+| `MSAL_CLIENT_ID` | Azure application (client) ID |
+| `MSAL_RELEASE_SIGNATURE_HASH` | Base64 SHA-1 of the release signing certificate (see below) |
+
+Compute `MSAL_RELEASE_SIGNATURE_HASH` from the release keystore:
+
+```sh
+keytool -exportcert -alias <alias> -keystore release.keystore | openssl sha1 -binary | openssl base64
+```
+
+**Optional repository variable** `RELEASE_CERT_SHA256`: the SHA-256 digest of the release signing
+certificate (hex, colons optional). When set, the release fails if the built APK is signed by any other
+certificate. Get it with `keytool -list -v -keystore release.keystore -alias <alias>` (the `SHA256:` line) or
+from the "Signer cert SHA-256" row of a previous release's job summary.
+
+**Cutting a release**: Actions → Release → Run workflow, with a `version` (`X.Y.Z`) and the `prerelease`
+flag. The workflow:
+
+1. validates the version (tag `vX.Y.Z` must not exist; `versionCode` = `X*10000 + Y*100 + Z`);
+2. runs the same checks as PR CI;
+3. fails if `DROPBOX_APP_KEY`, `MSAL_CLIENT_ID` or `MSAL_RELEASE_SIGNATURE_HASH` is empty, so a release never
+   silently ships with a provider "not configured" (tick `allow-missing-providers` to downgrade this to a
+   warning);
+4. builds and signs the APK, checks it with `apksigner verify` and, if `RELEASE_CERT_SHA256` is set, pins
+   the signer certificate;
+5. uploads `marknotes-X.Y.Z.apk` and its `.sha256` as a workflow artifact and publishes them in the
+   `vX.Y.Z` GitHub Release with generated notes;
+6. writes a job summary with the version, `versionCode`, signer digest and provider status.
+
+**Rollback**: Android refuses to install a lower `versionCode` over a higher one, so roll forward. Delete
+or mark the bad release as a pre-release (`gh release delete vX.Y.Z --cleanup-tag`, or
+`gh release edit vX.Y.Z --prerelease`) so it is no longer "Latest", then release a fix with a higher patch
+version (for example a revert on `main` released as `X.Y.Z+1`). Users who already installed the bad build
+must update to the new one; downgrading requires uninstalling the app, which deletes its local data.
+
+Locally, `assembleRelease` signs only when `MARKNOTES_KEYSTORE_PATH` (plus the matching password/alias env
+vars) is set; otherwise it stays unsigned.
 
 ### Configuring Dropbox and OneDrive
 
@@ -108,8 +152,8 @@ marknotes.msalSignatureHash=<base64 SHA-1 of the signing certificate>
   The hash depends on the signing key, so an APK signed with a different key (another PC's debug key, or
   the release key) fails to sign in to OneDrive. Add one Android platform entry per key in Entra.
 - **Release builds**: `release.yml` reads the repository secrets `DROPBOX_APP_KEY`, `MSAL_CLIENT_ID` and
-  `MSAL_RELEASE_SIGNATURE_HASH` (the hash of the release keystore). If they are missing, the release APK
-  shows both providers as not configured.
+  `MSAL_RELEASE_SIGNATURE_HASH` (the hash of the release keystore). The release fails if any of them is
+  missing, unless it is run with `allow-missing-providers`, in which case the provider shows as not configured.
 
 ### Proton Drive SDK
 
