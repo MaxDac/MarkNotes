@@ -1,5 +1,6 @@
 package io.github.maxdac.marknotes.proton
 
+import io.github.maxdac.marknotes.core.notes.Attachments
 import io.github.maxdac.marknotes.core.notes.NotePaths
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStore
 import io.github.maxdac.marknotes.core.sync.RemoteEntry
@@ -77,7 +78,7 @@ class ProtonDriveStore(
         val request = FileUploaderRequest(
             parentFolderUid = parent,
             name = NotePaths.name(path),
-            mediaType = MEDIA_TYPE,
+            mediaType = Attachments.mimeFor(path) ?: MEDIA_TYPE,
             fileSize = bytes.size.toLong(),
             lastModificationTime = now,
             overrideExistingDraftByOtherClient = false

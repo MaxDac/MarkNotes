@@ -36,13 +36,16 @@ class LocalNoteStore(val root: File) {
 
     fun isFolder(path: String): Boolean = file(path).isDirectory
 
-    /** Lists the direct children of [folder]: folders first, then notes, alphabetically. */
+    /**
+     * Lists the direct children of [folder]: folders first, then notes, alphabetically.
+     * The root [Attachments.FOLDER] is hidden.
+     */
     fun list(folder: String = ""): List<NoteEntry> {
         val dir = file(folder)
         val children = dir.listFiles() ?: return emptyList()
         val base = NotePaths.normalize(folder)
         return children
-            .filter { !it.name.startsWith(".") }
+            .filter { !it.name.startsWith(".") && !(base.isEmpty() && it.name == Attachments.FOLDER) }
             .map { it.toEntry(NotePaths.join(base, it.name)) }
             .sortedWith(compareBy<NoteEntry>({ !it.isFolder }, { it.name.lowercase() }))
     }
@@ -96,14 +99,17 @@ class LocalNoteStore(val root: File) {
         return normalized
     }
 
-    /** Creates an empty note named [name] (".md" is appended if missing) and returns its path. */
+    /**
+     * Creates an empty note named [name] (".md" is appended if missing) with a new id in its front-matter,
+     * and returns its path.
+     */
     fun createNote(folder: String, name: String): String {
         val trimmed = name.trim()
         NotePaths.validateName(trimmed)
         val fileName = if (NotePaths.isNote(trimmed)) trimmed else trimmed + NotePaths.NOTE_EXTENSION
         val path = NotePaths.join(NotePaths.normalize(folder), fileName)
         if (exists(path)) throw IOException("\"$fileName\" already exists")
-        write(path, "")
+        write(path, FrontMatter.withId("", NoteIds.generate()))
         return path
     }
 
@@ -112,8 +118,13 @@ class LocalNoteStore(val root: File) {
         val trimmed = name.trim()
         NotePaths.validateName(trimmed)
         val path = NotePaths.join(NotePaths.normalize(folder), trimmed)
-        if (exists(path)) throw IOException("\"$trimmed\" already exists")
+        checkAvailable(path, trimmed)
         return createFolder(path)
+    }
+
+    private fun checkAvailable(path: String, name: String) {
+        if (path == Attachments.FOLDER) throw IOException("\"$name\" is reserved for images")
+        if (exists(path)) throw IOException("\"$name\" already exists")
     }
 
     /** Renames an entry within its folder. Notes keep the ".md" extension. Returns the new path. */
@@ -129,9 +140,8 @@ class LocalNoteStore(val root: File) {
         }
         val newPath = NotePaths.join(NotePaths.parent(NotePaths.normalize(path)), finalName)
         if (newPath == NotePaths.normalize(path)) return newPath
-        val target = file(newPath)
-        if (target.exists()) throw IOException("\"$finalName\" already exists")
-        Files.move(source.toPath(), target.toPath())
+        checkAvailable(newPath, finalName)
+        Files.move(source.toPath(), file(newPath).toPath())
         return newPath
     }
 
@@ -160,8 +170,9 @@ class LocalNoteStore(val root: File) {
         return newPath
     }
 
-    /** Lists every folder below the root (excluding the root itself), sorted by path. */
-    fun listFolders(): List<String> = listAll().filter { it.isFolder }.map { it.path }.sorted()
+    /** Lists every folder below the root (excluding the root itself and the attachments), sorted by path. */
+    fun listFolders(): List<String> =
+        listAll().filter { it.isFolder && !Attachments.isInFolder(it.path) }.map { it.path }.sorted()
 
     /** Deletes a note or a folder (recursively). */
     fun delete(path: String) {

@@ -106,7 +106,8 @@ private fun MarkNotesNavHost() {
         composable(Routes.EDITOR, arguments = pathArg) { entry ->
             EditorScreen(
                 path = entry.arguments?.getString("path").orEmpty(),
-                onBack = { navController.navigateUp() }
+                onBack = { navController.navigateUp() },
+                onOpenNote = { navController.navigate(Routes.editor(it)) }
             )
         }
         composable(Routes.SETTINGS) {

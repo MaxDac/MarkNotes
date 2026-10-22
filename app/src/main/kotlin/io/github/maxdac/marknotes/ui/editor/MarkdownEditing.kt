@@ -200,6 +200,48 @@ object MarkdownEditing {
         return EditorText(newText, start + FENCE.length)
     }
 
+    /**
+     * When [new] is [old] with an `@` typed at the cursor, at the start of a line or after whitespace,
+     * returns the index of that `@` (the start of a note mention). Returns null otherwise.
+     */
+    fun typedMentionTrigger(old: EditorText, new: EditorText): Int? {
+        if (!new.collapsed) return null
+        val p = new.selectionStart
+        val text = new.text
+        if (text.length != old.text.length + 1 || p < 1 || text[p - 1] != '@') return null
+        if (text.substring(0, p - 1) + text.substring(p) != old.text) return null
+        val at = p - 1
+        return if (at == 0 || text[at - 1].isWhitespace()) at else null
+    }
+
+    /** Text typed after the `@` at [start] up to the cursor, or null when the mention is no longer active. */
+    fun mentionQuery(value: EditorText, start: Int): String? {
+        if (!value.collapsed) return null
+        val p = value.selectionStart
+        val text = value.text
+        if (start >= text.length || text[start] != '@' || p <= start) return null
+        val query = text.substring(start + 1, p)
+        return if ('\n' in query) null else query
+    }
+
+    /** Replaces the `@query` between [start] and the cursor with [link]. */
+    fun replaceMention(value: EditorText, start: Int, link: String): EditorText {
+        val end = value.selectionStart.coerceAtLeast(start)
+        val text = value.text.substring(0, start) + link + value.text.substring(end)
+        return EditorText(text, start + link.length)
+    }
+
+    /** Inserts [markdown] (an image) on its own line at the cursor, replacing the selection. */
+    fun insertBlock(value: EditorText, markdown: String): EditorText {
+        val text = value.text
+        val s = value.min
+        val e = value.max
+        val before = if (s > 0 && text[s - 1] != '\n') "\n" else ""
+        val after = if (e < text.length && text[e] != '\n') "\n" else ""
+        val insert = before + markdown + after
+        return EditorText(text.substring(0, s) + insert + text.substring(e), s + before.length + markdown.length)
+    }
+
     private fun insideCodeFence(text: String, lineStart: Int): Boolean =
         text.substring(0, lineStart).split('\n').count { it.trimStart().startsWith(FENCE) } % 2 == 1
 

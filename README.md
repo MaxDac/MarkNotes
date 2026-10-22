@@ -17,6 +17,14 @@ Simple Android markdown notes app with folders and sync to Proton Drive (unoffic
   inserts bold, italic, strikethrough, headings, bullet/numbered lists, checkboxes, quotes, inline code,
   code blocks and links. Pressing Enter on a list, checkbox or quote line continues it on the next line;
   Enter on an empty item ends the list. Changes are autosaved (debounced, and flushed when leaving the editor).
+- **Note links with `@`**: every note has a stable 8-character ID stored in a small front-matter header at the
+  top of the file (hidden in the editor and preview). Typing `@` at the start of a line or after a space opens a
+  panel listing every note with its full folder path and ID (with a copy button); keep typing to filter by ID
+  or by title/path, and tap a note to insert `[Title](marknotes:<id>)`. In the preview, tapping the link opens
+  the note; links to missing notes are shown struck through and tapping them says "Note not found".
+- **Images**: the toolbar's image button adds a photo from the gallery (photo picker) or the camera. Images are
+  downscaled to at most 2048 px, stored once under `attachments/` (named by content hash), shown in the preview
+  and synced to every drive. Settings → **Clean unused images** deletes images no note refers to.
 - **Appearance** (Settings): theme **System** (default), **Light** or **Dark**, and an accent colour chosen
   from 8 palettes (Blue, Teal, Green, Lime, Amber, Orange, Red, Purple) or **Dynamic** (Material You,
   Android 12+, the default where available).
@@ -25,7 +33,8 @@ Simple Android markdown notes app with folders and sync to Proton Drive (unoffic
   - for Dropbox and OneDrive you browse to a folder and can optionally create a root folder inside it
     (default `MarkNotes`); for Proton Drive you pick a folder name in *My files*;
   - sync runs on app launch and when you tap **Sync now**; there is no background or periodic polling;
-  - only folders and `.md` files are synced. Each drive keeps its own sync state, plus a small manifest at
+  - only folders, `.md` files and images under `attachments/` are synced (images are never merged: they are
+    immutable and named by their content hash). Each drive keeps its own sync state, plus a small manifest at
     `.marknotes/manifest.json` on the drive (content hashes and the device that last wrote each note);
   - when only one side changed, that version wins. Deletions and moves propagate (a move is a delete
     plus a create);
@@ -39,7 +48,10 @@ Simple Android markdown notes app with folders and sync to Proton Drive (unoffic
 - Sessions and tokens are stored encrypted with an Android Keystore AES-GCM key. Disconnecting a drive
   signs you out, and revokes the session where the provider supports it.
 
-Out of scope: search, tags, attachments, background sync, widgets, local encryption.
+The on-disk note format (IDs, note links, images) is shared with the desktop and web apps and described in
+[docs/note-format.md](docs/note-format.md).
+
+Out of scope: search, tags, background sync, widgets, local encryption.
 
 ## Project layout
 

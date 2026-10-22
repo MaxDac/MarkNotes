@@ -78,11 +78,71 @@ class SyncEngineTest {
     fun ignoresNonMarkdownFiles() = runTest {
         local.write("image.png", "png")
         remote.putFile("doc.pdf", "pdf")
+        local.write("attachments/readme.txt", "txt")
+        remote.putFile("attachments/sub/x.png", "png")
 
         syncClean()
 
         assertFalse(remote.exists("image.png"))
         assertFalse(local.exists("doc.pdf"))
+        assertFalse(remote.exists("attachments/readme.txt"))
+        assertFalse(local.exists("attachments/sub/x.png"))
+    }
+
+    @Test
+    fun attachmentsAreUploadedAndListedInTheManifest() = runTest {
+        local.writeBytes("attachments/aa.png", byteArrayOf(1, 2, 3))
+
+        val result = syncClean()
+
+        assertEquals(1, result.uploaded)
+        assertTrue(remote.exists("attachments/aa.png"))
+        val manifest = SyncManifest.parse(remote.manifest!!.toString(Charsets.UTF_8))!!
+        assertEquals(Hashing.sha256Hex(byteArrayOf(1, 2, 3)), manifest.files.getValue("attachments/aa.png").sha256)
+        assertStable()
+    }
+
+    @Test
+    fun attachmentsAreDownloadedWithoutBaseCopies() = runTest {
+        val base = InMemoryBaseContentStore()
+        engine = SyncEngine(local, remote, metadata, base) { 1000L }
+        remote.putFile("attachments/bb.jpg", "jpeg")
+
+        val result = syncClean()
+
+        assertEquals(1, result.downloaded)
+        assertEquals("jpeg", local.read("attachments/bb.jpg"))
+        assertEquals(null, base.get("attachments/bb.jpg"))
+        assertStable()
+    }
+
+    @Test
+    fun attachmentsOnBothSidesAreNeverConflicts() = runTest {
+        local.write("attachments/cc.png", "local bytes")
+        remote.putFile("attachments/cc.png", "remote bytes")
+
+        val result = syncClean()
+
+        assertTrue(result.conflicts.isEmpty())
+        assertEquals(0, result.uploaded + result.downloaded)
+        assertStable()
+    }
+
+    @Test
+    fun attachmentDeletionsPropagate() = runTest {
+        local.write("attachments/dd.png", "d")
+        remote.putFile("attachments/ee.gif", "e")
+        syncClean()
+
+        local.delete("attachments/dd.png")
+        remote.remove("attachments/ee.gif")
+        val result = syncClean()
+
+        assertEquals(1, result.deletedRemote)
+        assertEquals(1, result.deletedLocal)
+        assertFalse(remote.exists("attachments/dd.png"))
+        assertFalse(local.exists("attachments/ee.gif"))
+        assertStable()
     }
 
     @Test

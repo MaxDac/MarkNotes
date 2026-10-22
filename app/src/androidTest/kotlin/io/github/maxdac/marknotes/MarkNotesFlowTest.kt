@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.github.maxdac.marknotes.core.notes.FrontMatter
 import io.github.maxdac.marknotes.ui.browser.NEW_NOTE_FAB_TAG
 import io.github.maxdac.marknotes.ui.editor.EDITOR_FIELD_TAG
 import io.github.maxdac.marknotes.ui.editor.PREVIEW_TAG
@@ -21,6 +22,7 @@ import io.github.maxdac.marknotes.ui.settings.NO_DRIVES_TEXT
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -49,6 +51,9 @@ class MarkNotesFlowTest {
         scenario.close()
         notesDir.deleteRecursively()
     }
+
+    /** The note text without its (hidden) front-matter. */
+    private fun bodyOf(note: File) = FrontMatter.parse(note.readText()).body
 
     @Test
     fun emptyLibraryShowsPlaceholder() {
@@ -97,8 +102,9 @@ class MarkNotesFlowTest {
         compose.onNodeWithContentDescription("Back").performClick()
         compose.waitUntilExactlyOneExists(hasText("Shopping"))
         val note = File(notesDir, "Shopping.md")
-        compose.waitUntil(timeoutMillis = 5_000) { note.isFile && note.readText().isNotEmpty() }
-        assertEquals("# Groceries\n\n- milk", note.readText())
+        compose.waitUntil(timeoutMillis = 5_000) { note.isFile && bodyOf(note).isNotEmpty() }
+        assertNotNull(FrontMatter.parse(note.readText()).id)
+        assertEquals("# Groceries\n\n- milk", bodyOf(note))
     }
 
     @Test
@@ -122,8 +128,8 @@ class MarkNotesFlowTest {
         compose.onNodeWithContentDescription("Back").performClick()
         compose.waitUntilExactlyOneExists(hasText("Todo"))
         val note = File(notesDir, "Todo.md")
-        compose.waitUntil(timeoutMillis = 5_000) { note.isFile && note.readText().isNotEmpty() }
-        assertEquals("- [ ] milk\n- [ ] eggs\n**done**", note.readText())
+        compose.waitUntil(timeoutMillis = 5_000) { note.isFile && bodyOf(note).isNotEmpty() }
+        assertEquals("- [ ] milk\n- [ ] eggs\n**done**", bodyOf(note))
     }
 
     @Test

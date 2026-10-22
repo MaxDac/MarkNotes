@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,14 +53,20 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.maxdac.marknotes.AppContainer
 import io.github.maxdac.marknotes.appContainer
+import io.github.maxdac.marknotes.core.notes.Attachments
 import io.github.maxdac.marknotes.data.AppSettings
 import io.github.maxdac.marknotes.data.ThemeColor
 import io.github.maxdac.marknotes.data.ThemeMode
 import io.github.maxdac.marknotes.sync.DriveStatus
 import io.github.maxdac.marknotes.sync.SyncManager
+import io.github.maxdac.marknotes.ui.MarkNotesLogo
 import io.github.maxdac.marknotes.ui.login.THIRD_PARTY_DISCLAIMER
 import io.github.maxdac.marknotes.ui.swatch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 const val NO_DRIVES_TEXT = "No drives connected. Notes are only stored on this device."
 
@@ -108,7 +115,14 @@ fun SettingsScreen(onAddDrive: () -> Unit, onOpenConflicts: () -> Unit, onBack: 
             }
 
             HorizontalDivider()
+            ImagesSection(container, enabled = !state.running)
+
+            HorizontalDivider()
             Text("About", style = MaterialTheme.typography.titleMedium)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MarkNotesLogo(size = 48.dp)
+                Text("MarkNotes", style = MaterialTheme.typography.titleLarge)
+            }
             Text(THIRD_PARTY_DISCLAIMER, style = MaterialTheme.typography.bodyMedium)
             Text(
                 "MarkNotes is a personal, non-commercial project. Sync happens on app launch and when you tap " +
@@ -200,6 +214,55 @@ private fun DriveCard(drive: DriveStatus, enabled: Boolean, onRemove: () -> Unit
                 Text("Disconnect")
             }
         }
+    }
+}
+
+@Composable
+private fun ImagesSection(container: AppContainer, enabled: Boolean) {
+    val scope = rememberCoroutineScope()
+    var confirming by remember { mutableStateOf(false) }
+    var cleaning by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    Text("Images", style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Images added to notes are kept in the attachments folder and synced to every drive.",
+        style = MaterialTheme.typography.bodySmall
+    )
+    OutlinedButton(onClick = { confirming = true }, enabled = enabled && !cleaning) { Text("Clean unused images") }
+    if (cleaning) LinearProgressIndicator(Modifier.fillMaxWidth())
+    message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text("Clean unused images?") },
+            text = {
+                Text(
+                    "Images not referenced by any note will be deleted from this device, and from your drives " +
+                        "on the next sync."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirming = false
+                    cleaning = true
+                    scope.launch {
+                        message = try {
+                            val deleted = withContext(Dispatchers.IO) { Attachments.deleteUnused(container.notes) }
+                            if (deleted.isNotEmpty()) container.notifyLocalChanged()
+                            when (deleted.size) {
+                                0 -> "No unused images found."
+                                1 -> "Deleted 1 unused image."
+                                else -> "Deleted ${deleted.size} unused images."
+                            }
+                        } catch (e: Exception) {
+                            "Could not clean images: ${e.message}"
+                        }
+                        cleaning = false
+                    }
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } }
+        )
     }
 }
 
