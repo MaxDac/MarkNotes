@@ -19,10 +19,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import io.github.maxdac.marknotes.data.ThemeMode
 import io.github.maxdac.marknotes.ui.MarkNotesTheme
+import io.github.maxdac.marknotes.ui.NoteScreen
 import io.github.maxdac.marknotes.ui.browser.BrowserScreen
 import io.github.maxdac.marknotes.ui.conflicts.ConflictsScreen
 import io.github.maxdac.marknotes.ui.drives.AddDriveScreen
-import io.github.maxdac.marknotes.ui.editor.EditorScreen
 import io.github.maxdac.marknotes.ui.login.LoginScreen
 import io.github.maxdac.marknotes.ui.settings.SettingsScreen
 
@@ -104,7 +104,7 @@ private fun MarkNotesNavHost() {
             )
         }
         composable(Routes.EDITOR, arguments = pathArg) { entry ->
-            EditorScreen(
+            NoteScreen(
                 path = entry.arguments?.getString("path").orEmpty(),
                 onBack = { navController.navigateUp() },
                 onOpenNote = { navController.navigate(Routes.editor(it)) }

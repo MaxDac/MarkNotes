@@ -119,13 +119,18 @@ import java.io.File
 import org.commonmark.node.Link
 
 const val EDITOR_FIELD_TAG = "editor-field"
+const val EDITOR_NOTICE_TAG = "editor-notice"
 const val PREVIEW_TAG = "markdown-preview"
 const val FORMAT_TOOLBAR_TAG = "format-toolbar"
 const val MENTION_POPUP_TAG = "mention-popup"
 
+/**
+ * The markdown editor. [notice] is shown above the text, e.g. why a chord sequence could not be opened in the chord
+ * editor.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EditorScreen(path: String, onBack: () -> Unit, onOpenNote: (String) -> Unit = {}) {
+fun EditorScreen(path: String, onBack: () -> Unit, onOpenNote: (String) -> Unit = {}, notice: String? = null) {
     val context = LocalContext.current
     val container = context.appContainer
     val vm: EditorViewModel = viewModel { EditorViewModel(container, path) }
@@ -199,6 +204,16 @@ fun EditorScreen(path: String, onBack: () -> Unit, onOpenNote: (String) -> Unit 
 
                 else -> Column(Modifier.fillMaxSize()) {
                     if (state.importingImage) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (notice != null) {
+                        Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                notice,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(12.dp).testTag(EDITOR_NOTICE_TAG)
+                            )
+                        }
+                    }
                     TextField(
                         value = state.value,
                         onValueChange = vm::onValueChange,

@@ -106,7 +106,7 @@ object CoreParity {
         "merge/conflict-copy-name" to ParityMapping.Run { c ->
             withTempStore { store -> field("path", store.uniqueSibling(c.string("path"), SyncEngine.CONFLICT_SUFFIX)) }
         }
-    )
+    ) + ChordParity.mappings
 
     private fun field(key: String, value: Any?): JsonObject = JsonObject(
         mapOf(
