@@ -81,8 +81,12 @@ CI mirrors these commands. The checks live in the reusable `.github/workflows/ch
 checks, "Lint (ktlint, detekt, Android Lint)", "Unit tests", "Instrumented tests (emulator)" and
 "Build debug APK". The debug APK always includes the Proton Drive SDK.
 `pr-ci.yml` runs them on every pull request, and `main-ci.yml` reruns them on `main` and builds an unsigned
-release APK. Pull requests also run "Dependency review" (fails on high-severity vulnerabilities in added
-dependencies) and "actionlint" (workflow linting). `codeql.yml` runs CodeQL for Kotlin/Java and GitHub
+release APK. All jobs run on `ubuntu-24.04`, like the desktop and web repos. Pull requests also run
+"Dependency review" (fails on high-severity vulnerabilities in added dependencies and comments a summary on
+the PR when it fails) and "actionlint" (workflow linting). GitHub can't resolve Gradle version catalogs or
+transitive dependencies on its own, so `dependency-submission.yml` submits the resolved Gradle dependency
+graph on every push to `main` (feeding Dependabot alerts), and "Dependency review" submits the PR head's graph
+before comparing (except for fork PRs). `codeql.yml` runs CodeQL for Kotlin/Java and GitHub
 Actions on pull requests, on `main` and weekly. `dependabot-automerge.yml` enables squash auto-merge for
 Dependabot patch and minor updates (never majors or `me.proton.core`), so they merge once the checks pass.
 
@@ -123,8 +127,9 @@ flag. The workflow:
    warning);
 4. builds and signs the APK, checks it with `apksigner verify` and, if `RELEASE_CERT_SHA256` is set, pins
    the signer certificate;
-5. uploads `marknotes-X.Y.Z.apk` and its `.sha256` as a workflow artifact and publishes them in the
-   `vX.Y.Z` GitHub Release with generated notes;
+5. uploads `marknotes-X.Y.Z.apk` and a `SHA256SUMS` file (the same name the desktop and web releases use;
+   check with `sha256sum -c SHA256SUMS`) as a workflow artifact and publishes them in the `vX.Y.Z` GitHub
+   Release with generated notes;
 6. writes a job summary with the version, `versionCode`, signer digest and provider status.
 
 **Rollback**: Android refuses to install a lower `versionCode` over a higher one, so roll forward. Delete
