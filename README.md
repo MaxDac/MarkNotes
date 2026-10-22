@@ -25,6 +25,15 @@ Simple Android markdown notes app with folders and sync to Proton Drive (unoffic
 - **Images**: the toolbar's image button adds a photo from the gallery (photo picker) or the camera. Images are
   downscaled to at most 2048 px, stored once under `attachments/` (named by content hash), shown in the preview
   and synced to every drive. Settings → **Clean unused images** deletes images no note refers to.
+- **Chord sequences** (guitar and bass, ported from [ChordBuilder](https://github.com/MaxDac/ChordBuilder)): the
+  browser's **New chord sequence** action creates a note with `type: chords` in its front-matter, shown with a
+  music icon. It opens in a chord editor instead of the markdown editor: an ordered list of chords with small
+  diagrams (add, edit, duplicate, move, delete) and a builder with a horizontally scrollable fretboard (guitar
+  frets 1–24; bass frets 9–24 with a red line after the 12th), finger selection, tags and a note. Each chord
+  needs at least three non-muted strings; chords with the same name and instrument are numbered (`1 C`, `2 C`).
+  **View as text** shows the raw, human-readable file (`## C (guitar)` / `frets: x 3/3 2/2 0 1/1 0`). A file
+  whose body can't be read as chords (for example after a sync conflict) opens in the markdown editor with
+  the error and its line number.
 - **Appearance** (Settings): theme **System** (default), **Light** or **Dark**, and an accent colour chosen
   from 8 palettes (Blue, Teal, Green, Lime, Amber, Orange, Red, Purple) or **Dynamic** (Material You,
   Android 12+, the default where available).
@@ -48,7 +57,7 @@ Simple Android markdown notes app with folders and sync to Proton Drive (unoffic
 - Sessions and tokens are stored encrypted with an Android Keystore AES-GCM key. Disconnecting a drive
   signs you out, and revokes the session where the provider supports it.
 
-The on-disk note format (IDs, note links, images) is shared with the desktop and web apps and described in
+The on-disk note format (IDs, note links, images, chord sequences) is shared with the desktop and web apps and described in
 [marknotes-spec](https://github.com/MaxDac/marknotes-spec/blob/main/note-format.md), checked out at `spec/` as a git
 submodule (`git submodule update --init`).
 

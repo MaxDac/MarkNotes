@@ -28,6 +28,8 @@ object NoteIds {
 data class NoteDocument(val header: String, val body: String) {
     val id: String? get() = FrontMatter.idOf(header)
 
+    val type: String? get() = FrontMatter.typeOf(header)
+
     val text: String get() = header + body
 }
 
@@ -54,8 +56,14 @@ object FrontMatter {
     }
 
     /** Value of the `id` key in a front-matter [header], or null when missing or empty. */
-    fun idOf(header: String): String? = headerLines(header)
-        .firstNotNullOfOrNull { idLine.find(it)?.groupValues?.get(1) }
+    fun idOf(header: String): String? = valueOf(header, idLine)
+
+    /** Value of the `type` key in a front-matter [header] (e.g. `chords`), or null when missing or empty. */
+    fun typeOf(header: String): String? =
+        headerLines(header).firstNotNullOfOrNull(ChordSequences::typeValue)?.takeIf { it.isNotEmpty() }
+
+    private fun valueOf(header: String, line: Regex): String? = headerLines(header)
+        .firstNotNullOfOrNull { line.find(it)?.groupValues?.get(1) }
         ?.removeSurrounding("\"")
         ?.removeSurrounding("'")
         ?.takeIf { it.isNotEmpty() }

@@ -9,13 +9,20 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.github.maxdac.marknotes.core.notes.ChordSequences
 import io.github.maxdac.marknotes.core.notes.FrontMatter
 import io.github.maxdac.marknotes.ui.browser.NEW_NOTE_FAB_TAG
+import io.github.maxdac.marknotes.ui.chords.ADD_CHORD_FAB_TAG
+import io.github.maxdac.marknotes.ui.chords.CHORD_LIST_TAG
+import io.github.maxdac.marknotes.ui.chords.CHORD_NAME_FIELD_TAG
+import io.github.maxdac.marknotes.ui.chords.CHORD_TEXT_TAG
 import io.github.maxdac.marknotes.ui.editor.EDITOR_FIELD_TAG
+import io.github.maxdac.marknotes.ui.editor.EDITOR_NOTICE_TAG
 import io.github.maxdac.marknotes.ui.editor.PREVIEW_TAG
 import io.github.maxdac.marknotes.ui.login.THIRD_PARTY_DISCLAIMER
 import io.github.maxdac.marknotes.ui.settings.NO_DRIVES_TEXT
@@ -147,6 +154,50 @@ class MarkNotesFlowTest {
 
         compose.waitUntilExactlyOneExists(hasText("Inbox"))
         compose.onNodeWithContentDescription("Settings").assertExists()
+    }
+
+    @Test
+    fun createChordSequenceAddChordAndReopen() {
+        compose.onNodeWithContentDescription("New chord sequence").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("Song")
+        compose.onNodeWithText("OK").performClick()
+
+        compose.waitUntilExactlyOneExists(hasTestTag(ADD_CHORD_FAB_TAG), timeoutMillis = 5_000)
+        compose.onNodeWithTag(ADD_CHORD_FAB_TAG).performClick()
+        listOf("A2 fret 3", "D3 fret 2", "Open G3", "B3 fret 1", "Open E4").forEach { cell ->
+            compose.onNodeWithContentDescription(cell).performScrollTo().performClick()
+        }
+        compose.onNodeWithText("Frets: x 3/1 2/1 0 1/1 0", substring = true).assertExists()
+        compose.onNodeWithTag(CHORD_NAME_FIELD_TAG).performScrollTo().performTextInput("C")
+        compose.onNodeWithText("Add").performScrollTo().performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag(CHORD_LIST_TAG), timeoutMillis = 5_000)
+        compose.onNodeWithContentDescription("1 C: x 3/1 2/1 0 1/1 0").assertExists()
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Song"))
+        val note = File(notesDir, "Song.md")
+        compose.waitUntil(timeoutMillis = 5_000) { note.isFile && bodyOf(note).isNotEmpty() }
+        assertTrue(ChordSequences.isChordSequence(note.readText()))
+        assertEquals("## C (guitar)\nfrets: x 3/1 2/1 0 1/1 0\n", bodyOf(note))
+
+        compose.onNodeWithText("Song").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag(CHORD_LIST_TAG), timeoutMillis = 5_000)
+        compose.onNodeWithContentDescription("View as text").performClick()
+        compose.onNodeWithTag(CHORD_TEXT_TAG).assertExists()
+    }
+
+    @Test
+    fun unparsableChordFileOpensInMarkdownEditor() {
+        scenario.close()
+        notesDir.mkdirs()
+        File(notesDir, "Broken.md").writeText("---\ntype: chords\n---\n<<<<<<< ours\n## C (guitar)\n")
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+
+        compose.waitUntilExactlyOneExists(hasText("Broken"), timeoutMillis = 5_000)
+        compose.onNodeWithText("Broken").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag(EDITOR_NOTICE_TAG), timeoutMillis = 5_000)
+        compose.onNodeWithText("Line 1", substring = true).assertExists()
+        compose.onNodeWithTag(EDITOR_FIELD_TAG).assertExists()
     }
 
     @Test

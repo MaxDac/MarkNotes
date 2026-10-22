@@ -23,8 +23,10 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
@@ -76,6 +78,7 @@ const val NEW_NOTE_FAB_TAG = "new-note-fab"
 
 private sealed interface BrowserDialog {
     data object NewNote : BrowserDialog
+    data object NewChords : BrowserDialog
     data object NewFolder : BrowserDialog
     data class Rename(val entry: NoteEntry) : BrowserDialog
     data class Move(val entry: NoteEntry) : BrowserDialog
@@ -104,6 +107,7 @@ fun BrowserScreen(
     val container = LocalContext.current.appContainer
     val vm: BrowserViewModel = viewModel { BrowserViewModel(container, folder) }
     val entries by vm.entries.collectAsStateWithLifecycle()
+    val chordPaths by vm.chordPaths.collectAsStateWithLifecycle()
     val folders by vm.folders.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
     val sync by vm.syncState.collectAsStateWithLifecycle()
@@ -153,6 +157,9 @@ fun BrowserScreen(
                                 Icon(Icons.Filled.AccountTree, contentDescription = "Folders")
                             }
                         }
+                        IconButton(onClick = { dialog = BrowserDialog.NewChords }) {
+                            Icon(Icons.Filled.LibraryMusic, contentDescription = "New chord sequence")
+                        }
                         IconButton(onClick = { dialog = BrowserDialog.NewFolder }) {
                             Icon(Icons.Filled.CreateNewFolder, contentDescription = "New folder")
                         }
@@ -177,6 +184,7 @@ fun BrowserScreen(
             BrowserContent(
                 padding = padding,
                 entries = entries,
+                chordPaths = chordPaths,
                 sync = sync,
                 onOpenConflicts = onOpenConflicts,
                 onOpen = { entry -> if (entry.isFolder) onOpenFolder(entry.path) else onOpenNote(entry.path) },
@@ -207,6 +215,7 @@ fun BrowserScreen(
 private fun BrowserContent(
     padding: PaddingValues,
     entries: List<NoteEntry>,
+    chordPaths: Set<String>,
     sync: SyncState,
     onOpenConflicts: () -> Unit,
     onOpen: (NoteEntry) -> Unit,
@@ -243,6 +252,7 @@ private fun BrowserContent(
                 items(entries, key = { it.path }) { entry ->
                     EntryRow(
                         entry = entry,
+                        chords = entry.path in chordPaths,
                         onClick = { onOpen(entry) },
                         onRename = { onDialog(BrowserDialog.Rename(entry)) },
                         onMove = { onDialog(BrowserDialog.Move(entry)) },
@@ -266,6 +276,11 @@ private fun BrowserDialogs(
         BrowserDialog.NewNote -> NameDialog("New note", "", onDismiss = onDismiss) { name ->
             onDismiss()
             vm.createNote(name, onOpenNote)
+        }
+
+        BrowserDialog.NewChords -> NameDialog("New chord sequence", "", onDismiss = onDismiss) { name ->
+            onDismiss()
+            vm.createChordSequence(name, onOpenNote)
         }
 
         BrowserDialog.NewFolder -> NameDialog("New folder", "", onDismiss = onDismiss) { name ->
@@ -402,6 +417,7 @@ private fun MoveDialog(entry: NoteEntry, folders: List<String>, onDismiss: () ->
 @Composable
 private fun EntryRow(
     entry: NoteEntry,
+    chords: Boolean,
     onClick: () -> Unit,
     onRename: () -> Unit,
     onMove: () -> Unit,
@@ -411,10 +427,11 @@ private fun EntryRow(
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
         leadingContent = {
-            Icon(
-                if (entry.isFolder) Icons.Filled.Folder else Icons.AutoMirrored.Filled.Notes,
-                contentDescription = null
-            )
+            when {
+                entry.isFolder -> Icon(Icons.Filled.Folder, contentDescription = null)
+                chords -> Icon(Icons.Filled.MusicNote, contentDescription = "Chord sequence")
+                else -> Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null)
+            }
         },
         headlineContent = { Text(entry.displayName) },
         trailingContent = {

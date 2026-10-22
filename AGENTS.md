@@ -45,7 +45,7 @@ Gradle graph), **actionlint** and **CodeQL**. Required checks and review-thread 
 
 | Module | Contents |
 | --- | --- |
-| `:core` | Pure Kotlin/JVM, no Android APIs. `notes/` (`LocalNoteStore`, `FrontMatter` note IDs, `NoteIndex` and note links, `NotePaths`, `Attachments`), `merge/` (`LineDiff`, `ThreeWayMerge`), `sync/` (`SyncEngine`, `MultiDriveSync`, `SyncManifest`, `Hashing`, `RemoteDriveStore` interface, OneDrive store), `auth/` (Proton SRP and auth client). All format and sync logic lives here and is unit tested. |
+| `:core` | Pure Kotlin/JVM, no Android APIs. `notes/` (`LocalNoteStore`, `FrontMatter` note IDs, `NoteIndex` and note links, `NotePaths`, `Attachments`, `ChordSequence`), `merge/` (`LineDiff`, `ThreeWayMerge`), `sync/` (`SyncEngine`, `MultiDriveSync`, `SyncManifest`, `Hashing`, `RemoteDriveStore` interface, OneDrive store), `auth/` (Proton SRP and auth client). All format and sync logic lives here and is unit tested. |
 | `:app` | Android UI and wiring: Compose + Material 3, Navigation Compose, MVVM with `StateFlow`, Room (drive accounts, sync metadata), manual DI, Dropbox store, Dropbox/MSAL sign-in, encrypted token storage. |
 | `:proton-drive` | Proton Drive `RemoteDriveStore` on the Proton Drive SDK (JNI, `arm64-v8a`/`x86_64` only) plus the protoncore network stack and address-key resolvers. |
 
@@ -82,6 +82,7 @@ These areas are shared with the desktop and web apps and must behave identically
 - note format: files and folders, front-matter and note IDs (alphabet, lazy assignment, duplicates);
 - note links (`marknotes:<id>`, escaping, `@` picker matching, broken links);
 - attachments (`attachments/<sha256>.<ext>`, accepted types, size limits, cleanup);
+- chord sequences (`type: chords` detection, body grammar, canonical serialisation, validation, display names);
 - sync: `.marknotes/manifest.json` format, hashing, what is synced, three-way merge and conflict handling.
 
 Rules:

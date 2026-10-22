@@ -101,15 +101,16 @@ class LocalNoteStore(val root: File) {
 
     /**
      * Creates an empty note named [name] (".md" is appended if missing) with a new id in its front-matter,
-     * and returns its path.
+     * and returns its path. A non-null [type] (e.g. [ChordSequences.TYPE]) is written to the front-matter too.
      */
-    fun createNote(folder: String, name: String): String {
+    fun createNote(folder: String, name: String, type: String? = null): String {
         val trimmed = name.trim()
         NotePaths.validateName(trimmed)
         val fileName = if (NotePaths.isNote(trimmed)) trimmed else trimmed + NotePaths.NOTE_EXTENSION
         val path = NotePaths.join(NotePaths.normalize(folder), fileName)
         if (exists(path)) throw IOException("\"$fileName\" already exists")
-        write(path, FrontMatter.withId("", NoteIds.generate()))
+        val id = NoteIds.generate()
+        write(path, if (type == null) FrontMatter.withId("", id) else "---\nid: $id\ntype: $type\n---\n")
         return path
     }
 
