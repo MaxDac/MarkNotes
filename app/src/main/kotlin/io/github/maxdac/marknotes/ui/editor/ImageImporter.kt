@@ -5,7 +5,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
-import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
@@ -103,9 +102,9 @@ class ImageImporter(private val context: Context) {
     // The framework ExifInterface is reliable on minSdk 29, no need for the androidx copy.
     @SuppressLint("ExifInterface")
     private fun hasRotation(bytes: ByteArray): Boolean = try {
-        val orientation = ExifInterface(bytes.inputStream())
-            .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-        orientation != ExifInterface.ORIENTATION_NORMAL && orientation != ExifInterface.ORIENTATION_UNDEFINED
+        val exif = android.media.ExifInterface(bytes.inputStream())
+        val orientation = exif.getAttributeInt(TAG_ORIENTATION, ORIENTATION_NORMAL)
+        orientation != ORIENTATION_NORMAL && orientation != ORIENTATION_UNDEFINED
     } catch (e: IOException) {
         false
     }
@@ -123,10 +122,14 @@ class ImageImporter(private val context: Context) {
         else -> Bitmap.CompressFormat.JPEG
     }
 
+    @SuppressLint("ExifInterface")
     private companion object {
         const val QUALITY = 90
         const val MAX_INPUT_BYTES = 64L * 1024 * 1024
         const val BUFFER_SIZE = 64 * 1024
         const val BYTES_PER_MB = 1024.0 * 1024.0
+        const val TAG_ORIENTATION = android.media.ExifInterface.TAG_ORIENTATION
+        const val ORIENTATION_NORMAL = android.media.ExifInterface.ORIENTATION_NORMAL
+        const val ORIENTATION_UNDEFINED = android.media.ExifInterface.ORIENTATION_UNDEFINED
     }
 }
