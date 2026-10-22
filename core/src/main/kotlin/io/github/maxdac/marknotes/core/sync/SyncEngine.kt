@@ -2,6 +2,7 @@ package io.github.maxdac.marknotes.core.sync
 
 import io.github.maxdac.marknotes.core.merge.MergeResult
 import io.github.maxdac.marknotes.core.merge.ThreeWayMerge
+import io.github.maxdac.marknotes.core.notes.Attachments
 import io.github.maxdac.marknotes.core.notes.LocalNoteStore
 import io.github.maxdac.marknotes.core.notes.NoteEntry
 import io.github.maxdac.marknotes.core.notes.NotePaths
@@ -63,10 +64,11 @@ data class SyncResult(
  * Two-way sync between the local note tree and a remote folder.
  *
  * For every path it compares the local state, the remote state and the [SyncRecord] saved the last
- * time both sides agreed. Only markdown notes and folders are synced. Notes changed on both sides are
- * merged line by line against the last synced version kept in [base]; edits that overlap are reported
- * as [SyncConflict]s and left untouched until resolved. After each run the remote [SyncManifest] is
- * updated.
+ * time both sides agreed. Only markdown notes, image attachments and folders are synced. Attachments
+ * (see [Attachments]) are immutable binaries: uploaded, downloaded or deleted, never merged. Notes changed
+ * on both sides are merged line by line against the last synced version kept in [base]; edits that overlap
+ * are reported as [SyncConflict]s and left untouched until resolved. After each run the remote
+ * [SyncManifest] is updated.
  */
 @Suppress("LongParameterList")
 class SyncEngine(
@@ -163,9 +165,9 @@ class SyncEngine(
         private val pendingRemoteFolderDeletes = linkedMapOf<String, RemoteEntry>()
 
         suspend fun execute(): SyncResult {
-            localAll = local.listAll().filter { it.isFolder || NotePaths.isNote(it.path) }
+            localAll = local.listAll().filter { isSyncedEntry(it.path, it.isFolder) }
             remoteAll =
-                remote.snapshot().filter { isSyncablePath(it.path) && (it.isFolder || NotePaths.isNote(it.path)) }
+                remote.snapshot().filter { isSyncablePath(it.path) && isSyncedEntry(it.path, it.isFolder) }
             records = metadata.all().associateBy { it.path }
             manifest = readManifest()
 
@@ -270,10 +272,73 @@ class SyncEngine(
             val remoteFile = remoteFiles[path]
             val record = records[path]?.takeIf { !it.isFolder }
             when {
+                Attachments.isAttachment(path) -> syncAttachment(path, inLocal, remoteFile, record)
                 inLocal && remoteFile != null -> syncNoteOnBothSides(path, remoteFile, record)
                 inLocal -> syncLocalOnlyNote(path, record)
                 remoteFile != null -> syncRemoteOnlyNote(path, remoteFile, record)
                 else -> forget(path)
+            }
+        }
+
+        /**
+         * Attachments are named after their content hash, so they are immutable: they are only uploaded,
+         * downloaded or deleted, never merged, and no base copy is kept.
+         */
+        private suspend fun syncAttachment(
+            path: String,
+            inLocal: Boolean,
+            remoteFile: RemoteEntry?,
+            record: SyncRecord?
+        ) {
+            when {
+                inLocal && remoteFile != null -> {
+                    if (record == null || remoteChanged(remoteFile, record) || localHash(path) != record.localHash) {
+                        recordFile(path, remoteFile, localHash(path))
+                    }
+                }
+
+                inLocal -> syncLocalOnlyAttachment(path, record)
+
+                remoteFile != null -> syncRemoteOnlyAttachment(path, remoteFile, record)
+
+                else -> forget(path)
+            }
+        }
+
+        private suspend fun syncLocalOnlyAttachment(path: String, record: SyncRecord?) {
+            when {
+                record == null || localHash(path) != record.localHash -> {
+                    val entry = remote.uploadNew(path, local.readBytes(path))
+                    recordFile(path, entry, localHash(path))
+                    uploaded++
+                }
+
+                hasPendingAncestor(path, pendingLocalFolderDeletes) -> forget(path)
+
+                else -> {
+                    local.delete(path)
+                    forget(path)
+                    deletedLocal++
+                }
+            }
+        }
+
+        private suspend fun syncRemoteOnlyAttachment(path: String, remoteFile: RemoteEntry, record: SyncRecord?) {
+            when {
+                record == null || remoteChanged(remoteFile, record) -> {
+                    val bytes = remote.download(remoteFile)
+                    local.writeBytes(path, bytes)
+                    recordFile(path, remoteFile, Hashing.sha256Hex(bytes))
+                    downloaded++
+                }
+
+                hasPendingAncestor(path, pendingRemoteFolderDeletes.keys) -> forget(path)
+
+                else -> {
+                    remote.delete(remoteFile)
+                    forget(path)
+                    deletedRemote++
+                }
             }
         }
 
@@ -438,5 +503,9 @@ class SyncEngine(
         } catch (e: IllegalArgumentException) {
             false
         }
+
+        /** Folders, markdown notes and image attachments are synced; anything else is ignored. */
+        fun isSyncedEntry(path: String, isFolder: Boolean): Boolean =
+            isFolder || Attachments.isAttachment(path) || (NotePaths.isNote(path) && !Attachments.isInFolder(path))
     }
 }

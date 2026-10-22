@@ -27,10 +27,25 @@ class LocalNoteStoreTest {
     }
 
     @Test
-    fun createNoteAddsExtensionAndIsEmpty() {
+    fun createNoteAddsExtensionAndAnId() {
         val path = store.createNote("", "Shopping")
         assertEquals("Shopping.md", path)
-        assertEquals("", store.read(path))
+        val doc = FrontMatter.parse(store.read(path))
+        assertTrue(NoteIds.isValid(doc.id!!))
+        assertEquals("", doc.body)
+        assertEquals("---\nid: ${doc.id}\n---\n", store.read(path))
+    }
+
+    @Test
+    fun attachmentsFolderIsHiddenAndReserved() {
+        store.writeBytes("attachments/abc.png", byteArrayOf(1))
+        store.createFolder("work")
+        assertEquals(listOf("work"), store.list("").map { it.path })
+        assertEquals(listOf("work"), store.listFolders())
+        assertThrows(IOException::class.java) { store.createFolder("", "attachments") }
+        assertThrows(IOException::class.java) { store.rename("work", "attachments") }
+        store.createFolder("work", "attachments")
+        assertTrue(store.isFolder("work/attachments"))
     }
 
     @Test

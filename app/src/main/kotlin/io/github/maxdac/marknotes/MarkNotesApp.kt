@@ -14,6 +14,7 @@ import io.github.maxdac.marknotes.sync.DropboxConnector
 import io.github.maxdac.marknotes.sync.OneDriveConnector
 import io.github.maxdac.marknotes.sync.ProtonConnector
 import io.github.maxdac.marknotes.sync.SyncManager
+import io.github.maxdac.marknotes.ui.editor.ImageImporter
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +35,9 @@ class MarkNotesApp : Application() {
 /** Manual dependency container shared by the whole app. */
 class AppContainer(context: Context) {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    val notes = LocalNoteStore(File(context.filesDir, "notes").apply { mkdirs() })
+    val notesRoot = File(context.filesDir, "notes").apply { mkdirs() }
+    val notes = LocalNoteStore(notesRoot)
+    val imageImporter = ImageImporter(context.applicationContext)
     val settings = AppSettings(context, dynamicColorSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
     val authClient = ProtonAuthClient()
     private val database = MarkNotesDatabase.create(context)

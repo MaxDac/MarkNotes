@@ -146,4 +146,51 @@ class MarkdownEditingTest {
         assertNull(MarkdownEditing.continueList(at("- a", 3), at("- ab", 4)))
         assertNull(MarkdownEditing.continueList(at("- a", 3), at("- a\n\n", 5)))
     }
+
+    /** Simulates typing [c] at the (collapsed) cursor of [old]. */
+    private fun type(old: EditorText, c: Char): EditorText {
+        val p = old.selectionStart
+        return at(old.text.substring(0, p) + c + old.text.substring(p), p + 1)
+    }
+
+    @Test
+    fun mentionTriggersAtLineStartOrAfterWhitespace() {
+        assertEquals(0, MarkdownEditing.typedMentionTrigger(at("", 0), type(at("", 0), '@')))
+        assertEquals(3, MarkdownEditing.typedMentionTrigger(at("hi x", 3), type(at("hi x", 3), '@')))
+        assertEquals(3, MarkdownEditing.typedMentionTrigger(at("ab\n", 3), type(at("ab\n", 3), '@')))
+    }
+
+    @Test
+    fun mentionDoesNotTriggerInsideWordsOrOnPaste() {
+        assertNull(MarkdownEditing.typedMentionTrigger(at("mail", 4), type(at("mail", 4), '@')))
+        assertNull(MarkdownEditing.typedMentionTrigger(at("", 0), at("a @", 3)))
+        assertNull(MarkdownEditing.typedMentionTrigger(at("x", 1), type(at("x", 1), 'y')))
+    }
+
+    @Test
+    fun mentionQueryFollowsTheCursor() {
+        assertEquals("", MarkdownEditing.mentionQuery(at("a @", 3), 2))
+        assertEquals("sho", MarkdownEditing.mentionQuery(at("a @sho", 6), 2))
+        assertEquals("sh", MarkdownEditing.mentionQuery(at("a @sho", 5), 2))
+        assertNull(MarkdownEditing.mentionQuery(at("a @sho", 2), 2))
+        assertNull(MarkdownEditing.mentionQuery(at("a sho", 5), 2))
+        assertNull(MarkdownEditing.mentionQuery(at("a @s\nx", 6), 2))
+    }
+
+    @Test
+    fun replaceMentionInsertsLinkAndMovesCursor() {
+        val link = "[Shopping](marknotes:k7f3q2xa)"
+        assertEquals(
+            at("see $link end", 4 + link.length),
+            MarkdownEditing.replaceMention(at("see @sho end", 8), 4, link)
+        )
+    }
+
+    @Test
+    fun insertBlockPutsImageOnItsOwnLine() {
+        val image = "![cat](attachments/ab.png)"
+        assertEquals(at("one\n$image\ntwo", 4 + image.length), MarkdownEditing.insertBlock(at("onetwo", 3), image))
+        assertEquals(at(image, image.length), MarkdownEditing.insertBlock(at("", 0), image))
+        assertEquals(at("a\n$image\n", 2 + image.length), MarkdownEditing.insertBlock(at("a\n\n", 2), image))
+    }
 }

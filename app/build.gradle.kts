@@ -110,6 +110,7 @@ dependencies {
     implementation(libs.markwon.strikethrough)
     implementation(libs.markwon.tables)
     implementation(libs.markwon.tasklist)
+    implementation(libs.markwon.image)
     implementation(libs.markwon.syntax.highlight) {
         exclude(group = "org.jetbrains", module = "annotations-java5")
     }
