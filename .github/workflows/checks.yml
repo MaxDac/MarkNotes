@@ -13,7 +13,7 @@ env:
 jobs:
   lint:
     name: Lint (ktlint, detekt, Android Lint)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -34,7 +34,7 @@ jobs:
 
   unit-tests:
     name: Unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -52,9 +52,35 @@ jobs:
             **/build/test-results/
           if-no-files-found: ignore
 
+  parity:
+    name: Parity (marknotes-spec fixtures)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: ./.github/actions/setup-android-build
+      - name: Run the marknotes-spec fixtures
+        # Fails if the spec/ submodule is missing, a fixture file is unmapped, or Android stops matching a case.
+        run: >-
+          ./gradlew :core:parityTest :app:testDebugUnitTest --tests 'io.github.maxdac.marknotes.parity.*'
+          -Pmarknotes.parity.required=true --continue
+      - name: Upload parity reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: parity-reports
+          path: |
+            core/build/reports/tests/parityTest/
+            core/build/test-results/parityTest/
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+          if-no-files-found: ignore
+
   instrumented-tests:
     name: Instrumented tests (emulator)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -95,7 +121,7 @@ jobs:
 
   build:
     name: Build debug APK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7

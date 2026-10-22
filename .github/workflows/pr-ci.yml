@@ -18,19 +18,31 @@ jobs:
 
   dependency-review:
     name: Dependency review
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
-      contents: read
+      # contents: write submits the PR head's resolved Gradle dependency graph (see dependency-submission.yml).
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
+      # GitHub can't resolve Gradle version catalogs or transitive dependencies statically, so submit the
+      # resolved graph for the PR head first. Fork PRs get a read-only token and fall back to static parsing.
+      - if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: ./.github/actions/setup-android-build
+        with:
+          setup-gradle: "false"
+      - if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: gradle/actions/dependency-submission@v6
       - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
+          comment-summary-in-pr: on-failure
+          retry-on-snapshot-warnings: true
 
   actionlint:
     name: actionlint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       ACTIONLINT_VERSION: 1.7.12

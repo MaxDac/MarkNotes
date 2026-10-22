@@ -24,6 +24,14 @@ espresso = "3.7.0"
 ktlintPlugin = "14.2.0"
 ktlint = "1.8.0"
 detekt = "1.23.8"
+# Only on the build classpath (AGP and plugins pull it in); pinned above their transitive version for security fixes.
+bouncycastle = "1.86"
+# Dropbox SDK's transitive jackson-core 2.15 has GHSA-r7wm-3cxj-wff9 and GHSA-7hhh-6rmp-j9qf.
+jackson = "2.18.12"
+# Vulnerable transitive build-tool dependencies (AGP's bundletool/jetifier, prism4j-bundler), not shipped.
+commons-io = "2.16.1"
+jose4j = "0.9.6"
+jdom2 = "2.0.6.1"
 # Proton Drive SDK (Kotlin bindings over the C# SDK). Only used by :proton-drive.
 protonDriveSdk = "0.31.1"
 # Proton core libraries the SDK is built against (network stack for its ApiProvider, OpenPGP for address keys).
@@ -67,6 +75,13 @@ androidx-test-runner = { group = "androidx.test", name = "runner", version.ref =
 androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+bouncycastle-bcprov = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
+bouncycastle-bcpkix = { group = "org.bouncycastle", name = "bcpkix-jdk18on", version.ref = "bouncycastle" }
+bouncycastle-bcutil = { group = "org.bouncycastle", name = "bcutil-jdk18on", version.ref = "bouncycastle" }
+jackson-core = { group = "com.fasterxml.jackson.core", name = "jackson-core", version.ref = "jackson" }
+commons-io = { group = "commons-io", name = "commons-io", version.ref = "commons-io" }
+jose4j = { group = "org.bitbucket.b_c", name = "jose4j", version.ref = "jose4j" }
+jdom2 = { group = "org.jdom", name = "jdom2", version.ref = "jdom2" }
 kotlin-gradle-plugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
 proton-drive-sdk = { group = "me.proton.drive", name = "sdk", version.ref = "protonDriveSdk" }
 proton-core-domain = { group = "me.proton.core", name = "domain", version.ref = "protonCore" }
