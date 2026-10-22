@@ -29,7 +29,7 @@ bouncycastle = "1.86"
 # Dropbox SDK's transitive jackson-core 2.15 has GHSA-r7wm-3cxj-wff9 and GHSA-7hhh-6rmp-j9qf.
 jackson = "2.22.4"
 # Vulnerable transitive build-tool dependencies (AGP's bundletool/jetifier, prism4j-bundler), not shipped.
-commons-io = "2.16.1"
+commons-io = "2.22.0"
 jose4j = "0.9.6"
 jdom2 = "2.0.6.1"
 # Proton Drive SDK (Kotlin bindings over the C# SDK). Only used by :proton-drive.
