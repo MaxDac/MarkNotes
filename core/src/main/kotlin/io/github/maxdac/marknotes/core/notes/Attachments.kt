@@ -4,7 +4,7 @@ import io.github.maxdac.marknotes.core.sync.Hashing
 
 /**
  * Images embedded in notes. They live in the root [FOLDER], named after the SHA-256 of their bytes,
- * and are referenced from notes with paths relative to the notes root (see docs/note-format.md).
+ * and are referenced from notes with paths relative to the notes root (see spec/note-format.md).
  */
 object Attachments {
     const val FOLDER = "attachments"

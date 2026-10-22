@@ -120,15 +120,36 @@ dependencies {
     // Prism4j generates its grammar locator with a javac annotation processor (see CodeGrammars.java).
     annotationProcessor(libs.prism4j.bundler)
     implementation(libs.dropbox.android)
+    constraints {
+        // The Dropbox SDK's jackson-core 2.15 has known vulnerabilities (GHSA-r7wm-3cxj-wff9, GHSA-7hhh-6rmp-j9qf).
+        implementation(libs.jackson.core)
+        // prism4j-bundler's commons-io 2.6 (GHSA-78wr-2p64-hpwj, GHSA-gwrp-pvrq-jmwv); compile time only.
+        annotationProcessor(libs.commons.io)
+    }
     implementation(libs.msal)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
+    // marknotes-spec fixture loader (core/src/testFixtures).
+    testImplementation(testFixtures(project(":core")))
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.espresso.core)
+}
+
+tasks.withType<Test>().configureEach {
+    // MentionParityTest runs a marknotes-spec fixture from the spec/ submodule; the parity CI job sets
+    // -Pmarknotes.parity.required=true so a missing submodule fails instead of skipping.
+    systemProperty("marknotes.specDir", rootProject.file("spec").absolutePath)
+    systemProperty(
+        "marknotes.parity.required",
+        providers.gradleProperty("marknotes.parity.required").getOrElse("false")
+    )
+    inputs.files(rootProject.fileTree("spec/fixtures") { include("**/*.json") })
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("specFixtures")
 }

@@ -32,7 +32,7 @@ env:
 jobs:
   validate:
     name: Validate version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -70,7 +70,7 @@ jobs:
   release:
     name: Build and publish release
     needs: [validate, checks]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: write
@@ -167,7 +167,9 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk "dist/marknotes-$VERSION.apk"
-          (cd dist && sha256sum "marknotes-$VERSION.apk" > "marknotes-$VERSION.apk.sha256")
+          # Same checksum file name as the desktop and web releases (verify with `sha256sum -c SHA256SUMS`).
+          (cd dist && sha256sum -- * > SHA256SUMS)
+          cat dist/SHA256SUMS
       - name: Upload release artifact
         uses: actions/upload-artifact@v7
         with:
@@ -202,7 +204,7 @@ jobs:
             echo "| Signer cert SHA-256 | \`${CERT_SHA256:-unknown}\` |"
             echo "| Dropbox | ${DROPBOX_STATUS:-unknown} |"
             echo "| OneDrive | ${ONEDRIVE_STATUS:-unknown} |"
-            if [ -f "dist/marknotes-$VERSION.apk.sha256" ]; then
-              echo "| APK SHA-256 | \`$(cut -d' ' -f1 "dist/marknotes-$VERSION.apk.sha256")\` |"
+            if [ -f dist/SHA256SUMS ]; then
+              echo "| APK SHA-256 | \`$(grep " marknotes-$VERSION.apk\$" dist/SHA256SUMS | cut -d' ' -f1)\` |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"

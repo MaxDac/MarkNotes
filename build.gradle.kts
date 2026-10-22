@@ -2,6 +2,15 @@ buildscript {
     dependencies {
         // Pins the Kotlin Gradle plugin used by AGP's built-in Kotlin support and by :core.
         classpath(libs.kotlin.gradle.plugin)
+        constraints {
+            // AGP's transitive Bouncy Castle has known vulnerabilities (GHSA-9pwp-9qqc-pr26, GHSA-qp49-qgx5-5m26).
+            classpath(libs.bouncycastle.bcprov)
+            classpath(libs.bouncycastle.bcpkix)
+            classpath(libs.bouncycastle.bcutil)
+            // AGP's bundletool and jetifier: GHSA-3677-xxcr-wjqv (jose4j), GHSA-2363-cqg2-863c (jdom2).
+            classpath(libs.jose4j)
+            classpath(libs.jdom2)
+        }
     }
 }
 
@@ -15,6 +24,7 @@ plugins {
 }
 
 val ktlintVersion = libs.versions.ktlint.get()
+val bouncyCastleVersion = libs.versions.bouncycastle.get()
 
 subprojects {
     apply(plugin = "org.jlleitschuh.gradle.ktlint")
@@ -23,6 +33,15 @@ subprojects {
         android.set(true)
         filter {
             exclude { it.file.path.contains("${File.separator}build${File.separator}") }
+        }
+    }
+    // Android Lint's own classpath (not shipped) pulls the same vulnerable Bouncy Castle as the buildscript.
+    configurations.matching { it.name == "androidLintTool" }.configureEach {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "org.bouncycastle" && requested.name.endsWith("-jdk18on")) {
+                useVersion(bouncyCastleVersion)
+                because("GHSA-9pwp-9qqc-pr26, GHSA-qp49-qgx5-5m26")
+            }
         }
     }
 }
@@ -34,7 +53,7 @@ detekt {
     source.setFrom(
         files(
             subprojects.flatMap { project ->
-                listOf("src/main/kotlin", "src/test/kotlin", "src/androidTest/kotlin")
+                listOf("src/main/kotlin", "src/test/kotlin", "src/testFixtures/kotlin", "src/androidTest/kotlin")
                     .map { project.file(it) }
                     .filter { it.exists() }
             },
