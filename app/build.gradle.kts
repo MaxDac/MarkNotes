@@ -123,6 +123,8 @@ dependencies {
     constraints {
         // The Dropbox SDK's jackson-core 2.15 has known vulnerabilities (GHSA-r7wm-3cxj-wff9, GHSA-7hhh-6rmp-j9qf).
         implementation(libs.jackson.core)
+        // prism4j-bundler's commons-io 2.6 (GHSA-78wr-2p64-hpwj, GHSA-gwrp-pvrq-jmwv); compile time only.
+        annotationProcessor(libs.commons.io)
     }
     implementation(libs.msal)
     debugImplementation(libs.androidx.compose.ui.tooling)

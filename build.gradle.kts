@@ -7,6 +7,9 @@ buildscript {
             classpath(libs.bouncycastle.bcprov)
             classpath(libs.bouncycastle.bcpkix)
             classpath(libs.bouncycastle.bcutil)
+            // AGP's bundletool and jetifier: GHSA-3677-xxcr-wjqv (jose4j), GHSA-2363-cqg2-863c (jdom2).
+            classpath(libs.jose4j)
+            classpath(libs.jdom2)
         }
     }
 }
