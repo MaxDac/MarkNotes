@@ -34,7 +34,7 @@ ruleset requires them by name):
 | Checks / Unit tests | `./gradlew testDebugUnitTest :core:test --continue` |
 | Checks / Instrumented tests (emulator) | `./gradlew :app:connectedDebugAndroidTest` (needs a running emulator/device) |
 | Checks / Build debug APK | `./gradlew assembleDebug` |
-| Checks / Parity (marknotes-spec fixtures) | `./gradlew :core:parityTest` (needs the `spec/` submodule) |
+| Checks / Parity (marknotes-spec fixtures) | `./gradlew :core:parityTest :app:testDebugUnitTest --tests 'io.github.maxdac.marknotes.parity.*' -Pmarknotes.parity.required=true` (needs the `spec/` submodule) |
 
 PRs also run **Dependency review** (fails on high-severity vulnerabilities, after submitting the resolved
 Gradle graph), **actionlint** and **CodeQL**. Required checks and review-thread resolution are enforced by the
@@ -89,9 +89,12 @@ Rules:
 1. Changes to any of these land in **marknotes-spec first** (`note-format.md`, `features.md`, and fixtures
    under `fixtures/<area>/`), then are mirrored here **and** in marknotes-electron and marknotes-web. Bump the
    `spec/` submodule in the same PR that implements the change.
-2. Every fixture case in `spec/fixtures/` must pass in `:core` parity tests. A case this app can't satisfy yet
-   gets a `knownDivergence.android` reason in the spec repo (the test is then skipped with that reason), never a
-   silently weakened test here.
+2. Every fixture case in `spec/fixtures/` must pass in the parity tests: `CoreParity` (`core/src/test/.../parity/`)
+   maps each fixture file to the real `:core` function (`note-links/mention` runs in `:app`'s `MentionParityTest`),
+   and the run fails on an unmapped fixture file. A case this app can't satisfy yet gets a `knownDivergence.android`
+   reason in the spec repo (the test then asserts the output still differs and is skipped with that reason), never a
+   silently weakened test here. Without the submodule the parity tests skip in `:core:test`/`testDebugUnitTest`;
+   `:core:parityTest` and the CI job fail instead.
 3. Features that aren't shared (for example Android-only UI) don't need spec changes, but update the
    `features.md` matrix when a user-visible feature is added, removed or changed.
 4. To compare a feature across the apps, use the parity-check prompt: `/parity-check <feature>` in Claude Code

@@ -15,3 +15,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  # The spec/ submodule (MaxDac/marknotes-spec): bumps run the new fixtures in the Parity check.
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: weekly

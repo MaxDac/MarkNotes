@@ -49,7 +49,8 @@ Simple Android markdown notes app with folders and sync to Proton Drive (unoffic
   signs you out, and revokes the session where the provider supports it.
 
 The on-disk note format (IDs, note links, images) is shared with the desktop and web apps and described in
-[docs/note-format.md](docs/note-format.md).
+[marknotes-spec](https://github.com/MaxDac/marknotes-spec/blob/main/note-format.md), checked out at `spec/` as a git
+submodule (`git submodule update --init`).
 
 Out of scope: search, tags, background sync, widgets, local encryption.
 
@@ -74,12 +75,16 @@ The Gradle wrapper (9.8.1, AGP 9.4 with built-in Kotlin 2.4) is included:
 ./gradlew assembleDebug                      # build the debug APK
 ./gradlew ktlintCheck detekt lintDebug       # ktlint, detekt and Android Lint (ktlintFormat auto-fixes style)
 ./gradlew testDebugUnitTest :core:test       # unit tests (:core is a plain JVM module)
+./gradlew :core:parityTest                   # marknotes-spec fixtures (git submodule update --init first)
 ./gradlew :app:connectedDebugAndroidTest     # Compose UI tests on a running emulator/device
 ```
 
 CI mirrors these commands. The checks live in the reusable `.github/workflows/checks.yml`: four required
 checks, "Lint (ktlint, detekt, Android Lint)", "Unit tests", "Instrumented tests (emulator)" and
-"Build debug APK". The debug APK always includes the Proton Drive SDK.
+"Build debug APK". The debug APK always includes the Proton Drive SDK. A fifth check, "Parity (marknotes-spec
+fixtures)", checks out the `spec/` submodule and runs every [marknotes-spec](https://github.com/MaxDac/marknotes-spec)
+golden fixture against the real implementation (`./gradlew :core:parityTest` and the `:app` mention test;
+see AGENTS.md, "Cross-app parity").
 `pr-ci.yml` runs them on every pull request, and `main-ci.yml` reruns them on `main` and builds an unsigned
 release APK. All jobs run on `ubuntu-24.04`, like the desktop and web repos. Pull requests also run
 "Dependency review" (fails on high-severity vulnerabilities in added dependencies and comments a summary on

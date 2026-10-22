@@ -4,7 +4,7 @@ import java.security.SecureRandom
 import kotlin.random.Random
 import kotlin.random.asKotlinRandom
 
-/** Stable note identifiers stored in the note's front-matter (see docs/note-format.md). */
+/** Stable note identifiers stored in the note's front-matter (see spec/note-format.md). */
 object NoteIds {
     const val LENGTH = 8
 

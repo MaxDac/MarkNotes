@@ -6,7 +6,7 @@ conventions, release, sibling repos). Key rules:
 - Android app (Kotlin, Gradle). Format, sync, link and attachment logic lives in the pure-JVM `:core` module;
   `:app` is Compose UI, `:proton-drive` wraps the Proton Drive SDK.
 - Before pushing, run what CI runs: `./gradlew ktlintCheck detekt lintDebug testDebugUnitTest :core:test assembleDebug`
-  and, when `spec/` changes or parity logic changes, `./gradlew :core:parityTest`.
+  and, when `spec/` changes or parity logic changes, `./gradlew :core:parityTest :app:testDebugUnitTest --tests 'io.github.maxdac.marknotes.parity.*' -Pmarknotes.parity.required=true`.
 - Don't rename CI jobs in `.github/workflows/checks.yml` or `pr-ci.yml`: the `main` ruleset requires them by name.
 - This app shares its notes folder with [marknotes-electron](https://github.com/MaxDac/marknotes-electron) and
   [marknotes-web](https://github.com/MaxDac/marknotes-web). Changes to the note format, note IDs, links,

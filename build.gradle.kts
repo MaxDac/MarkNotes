@@ -40,7 +40,7 @@ detekt {
     source.setFrom(
         files(
             subprojects.flatMap { project ->
-                listOf("src/main/kotlin", "src/test/kotlin", "src/androidTest/kotlin")
+                listOf("src/main/kotlin", "src/test/kotlin", "src/testFixtures/kotlin", "src/androidTest/kotlin")
                     .map { project.file(it) }
                     .filter { it.exists() }
             },
