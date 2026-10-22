@@ -2,6 +2,12 @@ buildscript {
     dependencies {
         // Pins the Kotlin Gradle plugin used by AGP's built-in Kotlin support and by :core.
         classpath(libs.kotlin.gradle.plugin)
+        constraints {
+            // AGP's transitive Bouncy Castle has known vulnerabilities (GHSA-9pwp-9qqc-pr26, GHSA-qp49-qgx5-5m26).
+            classpath(libs.bouncycastle.bcprov)
+            classpath(libs.bouncycastle.bcpkix)
+            classpath(libs.bouncycastle.bcutil)
+        }
     }
 }
 
