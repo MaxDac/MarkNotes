@@ -23,7 +23,7 @@ import org.junit.runners.Parameterized
 class MentionParityTest(private val case: FixtureCase) {
     @Test
     fun matchesSpec() {
-        case.check(detect(case.string("lineBeforeCursor")), PENDING_SPEC_ISSUES[case.name])
+        case.check(detect(case.string("lineBeforeCursor")))
     }
 
     private fun detect(line: String): JsonElement {
@@ -46,12 +46,6 @@ class MentionParityTest(private val case: FixtureCase) {
     }
 
     companion object {
-        /** Unexpected differences reported to marknotes-spec, not yet triaged there. */
-        private val PENDING_SPEC_ISSUES = mapOf(
-            "space right after @" to "Android keeps the mention open after '@ ' (query \" road\"); the picker only " +
-                "closes on a trailing space when nothing matches, so the outcome depends on the note index."
-        )
-
         @JvmStatic
         @Parameterized.Parameters(name = "{0}")
         fun cases(): List<FixtureCase> = SpecFixtures.load("note-links/mention")

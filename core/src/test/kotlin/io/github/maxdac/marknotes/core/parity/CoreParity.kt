@@ -62,12 +62,9 @@ object CoreParity {
         "attachments/extension-for-type" to ParityMapping.Run { c ->
             field("extension", Attachments.extensionFor(c.string("mime")))
         },
-        "attachments/is-attachment-path" to ParityMapping.Run(
-            pendingSpecIssues = mapOf(
-                "uppercase hash" to "Android accepts any name with a supported extension, so an uppercase hash is " +
-                    "an attachment too (same root cause as the 'name that is not a hash' divergence)."
-            )
-        ) { c -> field("isAttachment", Attachments.isAttachment(c.string("path"))) },
+        "attachments/is-attachment-path" to ParityMapping.Run { c ->
+            field("isAttachment", Attachments.isAttachment(c.string("path")))
+        },
         "attachments/image-markdown" to ParityMapping.Run { c ->
             field("markdown", Attachments.markdown(c.string("fileName"), c.string("path")))
         },
@@ -84,12 +81,7 @@ object CoreParity {
         "attachments/refs" to ParityMapping.Run { c ->
             list("refs", Attachments.references(c.string("text")).sorted())
         },
-        "manifest/parse" to ParityMapping.Run(
-            pendingSpecIssues = mapOf(
-                "numeric version" to "Android reads a JSON number as the version string (\"1\") instead of " +
-                    "rejecting the manifest."
-            )
-        ) { c ->
+        "manifest/parse" to ParityMapping.Run { c ->
             JsonObject(mapOf("manifest" to (SyncManifest.parse(c.string("json"))?.let(::manifestJson) ?: JsonNull)))
         },
         "manifest/serialize" to ParityMapping.Run { c ->
