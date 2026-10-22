@@ -21,6 +21,7 @@ plugins {
 }
 
 val ktlintVersion = libs.versions.ktlint.get()
+val bouncyCastleVersion = libs.versions.bouncycastle.get()
 
 subprojects {
     apply(plugin = "org.jlleitschuh.gradle.ktlint")
@@ -29,6 +30,15 @@ subprojects {
         android.set(true)
         filter {
             exclude { it.file.path.contains("${File.separator}build${File.separator}") }
+        }
+    }
+    // Android Lint's own classpath (not shipped) pulls the same vulnerable Bouncy Castle as the buildscript.
+    configurations.matching { it.name == "androidLintTool" }.configureEach {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "org.bouncycastle" && requested.name.endsWith("-jdk18on")) {
+                useVersion(bouncyCastleVersion)
+                because("GHSA-9pwp-9qqc-pr26, GHSA-qp49-qgx5-5m26")
+            }
         }
     }
 }
