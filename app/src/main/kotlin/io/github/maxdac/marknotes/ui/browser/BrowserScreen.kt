@@ -69,6 +69,7 @@ import io.github.maxdac.marknotes.appContainer
 import io.github.maxdac.marknotes.core.notes.NoteEntry
 import io.github.maxdac.marknotes.core.notes.NotePaths
 import io.github.maxdac.marknotes.sync.SyncState
+import io.github.maxdac.marknotes.ui.MarkNotesLogo
 import kotlinx.coroutines.launch
 
 const val NEW_NOTE_FAB_TAG = "new-note-fab"
@@ -125,7 +126,16 @@ fun BrowserScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(if (folder.isEmpty()) "MarkNotes" else NotePaths.name(folder)) },
+                    title = {
+                        if (folder.isEmpty()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                MarkNotesLogo(Modifier.padding(end = 8.dp), size = 28.dp)
+                                Text("MarkNotes")
+                            }
+                        } else {
+                            Text(NotePaths.name(folder))
+                        }
+                    },
                     navigationIcon = {
                         if (folder.isNotEmpty()) {
                             IconButton(onClick = onBack) {
@@ -220,7 +230,12 @@ private fun BrowserContent(
             }
         }
         if (entries.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                MarkNotesLogo(Modifier.padding(bottom = 16.dp), size = 96.dp)
                 Text("No notes here yet", style = MaterialTheme.typography.bodyLarge)
             }
         } else {

@@ -61,6 +61,7 @@ import io.github.maxdac.marknotes.data.ThemeColor
 import io.github.maxdac.marknotes.data.ThemeMode
 import io.github.maxdac.marknotes.sync.DriveStatus
 import io.github.maxdac.marknotes.sync.SyncManager
+import io.github.maxdac.marknotes.ui.MarkNotesLogo
 import io.github.maxdac.marknotes.ui.login.THIRD_PARTY_DISCLAIMER
 import io.github.maxdac.marknotes.ui.swatch
 import kotlinx.coroutines.Dispatchers
@@ -118,6 +119,10 @@ fun SettingsScreen(onAddDrive: () -> Unit, onOpenConflicts: () -> Unit, onBack: 
 
             HorizontalDivider()
             Text("About", style = MaterialTheme.typography.titleMedium)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MarkNotesLogo(size = 48.dp)
+                Text("MarkNotes", style = MaterialTheme.typography.titleLarge)
+            }
             Text(THIRD_PARTY_DISCLAIMER, style = MaterialTheme.typography.bodyMedium)
             Text(
                 "MarkNotes is a personal, non-commercial project. Sync happens on app launch and when you tap " +
