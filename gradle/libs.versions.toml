@@ -27,7 +27,7 @@ detekt = "1.23.8"
 # Only on the build classpath (AGP and plugins pull it in); pinned above their transitive version for security fixes.
 bouncycastle = "1.86"
 # Dropbox SDK's transitive jackson-core 2.15 has GHSA-r7wm-3cxj-wff9 and GHSA-7hhh-6rmp-j9qf.
-jackson = "2.18.12"
+jackson = "2.22.4"
 # Vulnerable transitive build-tool dependencies (AGP's bundletool/jetifier, prism4j-bundler), not shipped.
 commons-io = "2.16.1"
 jose4j = "0.9.6"
