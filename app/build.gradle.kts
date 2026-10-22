@@ -120,6 +120,10 @@ dependencies {
     // Prism4j generates its grammar locator with a javac annotation processor (see CodeGrammars.java).
     annotationProcessor(libs.prism4j.bundler)
     implementation(libs.dropbox.android)
+    constraints {
+        // The Dropbox SDK's jackson-core 2.15 has known vulnerabilities (GHSA-r7wm-3cxj-wff9, GHSA-7hhh-6rmp-j9qf).
+        implementation(libs.jackson.core)
+    }
     implementation(libs.msal)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
