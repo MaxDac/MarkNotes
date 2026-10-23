@@ -89,6 +89,8 @@ kotlin {
 
 dependencies {
     implementation(project(":core"))
+    implementation(variantOf(libs.marknotes.sync.android) { artifactType("aar") })
+    implementation(variantOf(libs.jna) { artifactType("aar") })
     // Proton Drive SDK bridge (GPLv3, ships NativeAOT native libraries).
     implementation(project(":proton-drive"))
 

@@ -3,7 +3,7 @@ package io.github.maxdac.marknotes.sync
 import android.content.Context
 import io.github.maxdac.marknotes.core.auth.ProtonApiException
 import io.github.maxdac.marknotes.core.notes.LocalNoteStore
-import io.github.maxdac.marknotes.core.sync.ConflictResolution
+import io.github.maxdac.marknotes.core.sync.ConflictMergeBack
 import io.github.maxdac.marknotes.core.sync.DriveAccount
 import io.github.maxdac.marknotes.core.sync.DriveProvider
 import io.github.maxdac.marknotes.core.sync.DriveSyncTarget
@@ -15,6 +15,7 @@ import io.github.maxdac.marknotes.data.DriveAccountDao
 import io.github.maxdac.marknotes.data.DriveAccountEntity
 import io.github.maxdac.marknotes.data.RoomSyncMetadataStore
 import io.github.maxdac.marknotes.data.SyncRecordDao
+import io.github.maxdac.marknotes.sync.MergeResult
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -51,7 +52,7 @@ data class SyncState(
  */
 class SyncManager(
     private val context: Context,
-    notes: LocalNoteStore,
+    private val notes: LocalNoteStore,
     private val records: SyncRecordDao,
     private val accounts: DriveAccountDao,
     val proton: ProtonConnector,
@@ -62,6 +63,7 @@ class SyncManager(
 ) {
     private val mutex = Mutex()
     private val multiSync = MultiDriveSync(notes, settings.deviceId)
+    private val mergeBack = ConflictMergeBack(notes)
     private val migrated = CompletableDeferred<Unit>()
 
     private val _state = MutableStateFlow(SyncState(message = settings.lastSyncSummary.ifBlank { null }))
@@ -134,29 +136,39 @@ class SyncManager(
         scope.launch { runSync() }
     }
 
-    /** Applies [resolution] on the conflict's drive, then syncs again so the other drives receive it. */
-    fun resolve(conflict: SyncConflict, resolution: ConflictResolution) {
+    /** Three-way merge of a conflicted copy into its note, for the merge-back UI. */
+    suspend fun mergePreview(conflict: SyncConflict): MergeResult =
+        withContext(Dispatchers.IO) { mergeBack.merge(conflict) }
+
+    /** Saves [text] as the note, deletes the conflicted copy, then syncs so every drive receives both changes. */
+    fun mergeBack(conflict: SyncConflict, text: String) = settle(conflict, "merge") { mergeBack.apply(conflict, text) }
+
+    /** Deletes the conflicted copy (locally, then on every drive at the next sync). */
+    fun discardCopy(
+        conflict: SyncConflict
+    ) = settle(conflict, "discard the copy of") { mergeBack.discardCopy(conflict) }
+
+    /** Keeps both files as they are and stops listing the conflict. */
+    fun keepBoth(conflict: SyncConflict) {
+        _state.update { s -> s.copy(conflicts = s.conflicts.filterNot { it.copyPath == conflict.copyPath }) }
+    }
+
+    private fun settle(conflict: SyncConflict, verb: String, action: () -> Unit) {
         scope.launch {
-            val resolved = mutex.withLock {
-                _state.update { it.copy(running = true) }
+            val settled = mutex.withLock {
                 try {
-                    val account = accounts.get(conflict.driveId)?.toAccount()
-                        ?: error("The drive of this conflict is no longer connected")
-                    val target = target(account)
-                    withContext(Dispatchers.IO) { multiSync.engine(target).resolve(conflict, resolution) }
-                    _state.update { s -> s.copy(conflicts = s.conflicts.filterNot { it === conflict }) }
+                    withContext(Dispatchers.IO) { action() }
+                    keepBoth(conflict)
                     onLocalChanged()
                     true
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    _state.update { it.copy(message = "Could not resolve ${conflict.path}: ${describe(e)}") }
+                    _state.update { it.copy(message = "Could not $verb ${conflict.path}: ${describe(e)}") }
                     false
-                } finally {
-                    _state.update { it.copy(running = false) }
                 }
             }
-            if (resolved) runSync()
+            if (settled) runSync()
         }
     }
 
@@ -192,7 +204,10 @@ class SyncManager(
             }
             settings.lastSyncAt = now
             settings.lastSyncSummary = summary
-            _state.update { it.copy(message = summary, conflicts = result.conflicts) }
+            val pending = withContext(Dispatchers.IO) { _state.value.conflicts.filter { mergeBack.isPending(it) } }
+            _state.update {
+                it.copy(message = summary, conflicts = (pending + result.conflicts).distinctBy { c -> c.copyPath })
+            }
             onLocalChanged()
         } catch (e: CancellationException) {
             throw e

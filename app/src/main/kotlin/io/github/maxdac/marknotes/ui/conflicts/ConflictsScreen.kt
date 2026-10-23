@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -44,10 +45,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.maxdac.marknotes.appContainer
-import io.github.maxdac.marknotes.core.merge.ConflictChoice
-import io.github.maxdac.marknotes.core.merge.MergeChunk
-import io.github.maxdac.marknotes.core.sync.ConflictResolution
 import io.github.maxdac.marknotes.core.sync.SyncConflict
+import io.github.maxdac.marknotes.sync.ConflictChoice
+import io.github.maxdac.marknotes.sync.MergeChunk
+import io.github.maxdac.marknotes.sync.MergeResult
+import io.github.maxdac.marknotes.sync.Side
+import io.github.maxdac.marknotes.sync.mergeText
+import kotlinx.coroutines.CancellationException
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,12 +80,18 @@ fun ConflictsScreen(onBack: () -> Unit) {
                 Modifier.padding(padding).fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(state.conflicts, key = { it.driveId + ":" + it.path }) { conflict ->
+                items(state.conflicts, key = { it.copyPath }) { conflict ->
                     val drive = state.drives.firstOrNull { it.account.id == conflict.driveId }?.account
                     val driveName = drive?.let { "${it.provider.displayName} (${it.label})" } ?: "the drive"
-                    ConflictCard(conflict, driveName, enabled = !state.running) { resolution ->
-                        syncManager.resolve(conflict, resolution)
-                    }
+                    ConflictCard(
+                        conflict = conflict,
+                        driveName = driveName,
+                        enabled = !state.running,
+                        loadMerge = { syncManager.mergePreview(conflict) },
+                        onMergeBack = { syncManager.mergeBack(conflict, it) },
+                        onDiscardCopy = { syncManager.discardCopy(conflict) },
+                        onKeepBoth = { syncManager.keepBoth(conflict) }
+                    )
                 }
             }
         }
@@ -94,29 +104,53 @@ private fun ConflictCard(
     conflict: SyncConflict,
     driveName: String,
     enabled: Boolean,
-    onResolve: (ConflictResolution) -> Unit
+    loadMerge: suspend () -> MergeResult,
+    onMergeBack: (String) -> Unit,
+    onDiscardCopy: () -> Unit,
+    onKeepBoth: () -> Unit
 ) {
-    val merge = conflict.merge
-    val hunks = merge.conflicts
+    var merge by remember(conflict) { mutableStateOf<MergeResult?>(null) }
+    var loadError by remember(conflict) { mutableStateOf<String?>(null) }
+    LaunchedEffect(conflict) {
+        try {
+            merge = loadMerge()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            loadError = e.message ?: e.javaClass.simpleName
+        }
+    }
+    val hunks = merge?.chunks.orEmpty().filterIsInstance<MergeChunk.Conflict>()
     val choices = remember(conflict) { mutableStateMapOf<Int, ConflictChoice>() }
     var editing by remember(conflict) { mutableStateOf<String?>(null) }
+    val kept = if (conflict.winner == Side.LOCAL) "this device" else driveName
+    val copied = if (conflict.winner == Side.LOCAL) driveName else "this device"
 
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(conflict.path, style = MaterialTheme.typography.titleMedium)
-            Text("Changed on this device and on $driveName.", style = MaterialTheme.typography.bodySmall)
-            if (hunks.isNotEmpty()) {
-                val autoMerged = merge.chunks.count { it is MergeChunk.Resolved && it.changed }
+            Text(
+                "Changed on this device and on $driveName. The newest version (from $kept) was kept; " +
+                    "the version from $copied was saved as ${conflict.copyPath}.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            loadError?.let { Text("Can't merge the copy back: $it", color = MaterialTheme.colorScheme.error) }
+            merge?.let { result ->
+                val autoMerged = result.chunks.count { it is MergeChunk.Resolved && it.changed }
                 Text(
-                    "${hunks.size} conflicting change(s); $autoMerged other change(s) were merged automatically.",
+                    if (hunks.isEmpty()) {
+                        "The copy can be merged back without conflicts."
+                    } else {
+                        "${hunks.size} conflicting change(s); $autoMerged other change(s) merge automatically."
+                    },
                     style = MaterialTheme.typography.bodySmall
                 )
             }
             hunks.forEachIndexed { index, hunk ->
                 HorizontalDivider()
                 Text("Change ${index + 1}", style = MaterialTheme.typography.labelLarge)
-                VersionText("This device", hunk.localText)
-                VersionText(driveName, hunk.remoteText)
+                VersionText("Kept version", hunk.local.joinToString(""))
+                VersionText("Conflicted copy", hunk.remote.joinToString(""))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     HUNK_OPTIONS.forEach { (choice, label) ->
                         FilterChip(
@@ -133,24 +167,19 @@ private fun ConflictCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (hunks.isNotEmpty()) {
+                merge?.let { result ->
                     Button(
-                        onClick = { onResolve(ConflictResolution.Merged(merge.text(choices.toMap()))) },
+                        onClick = { onMergeBack(mergeText(result.chunks, choices.toMap())) },
                         enabled = enabled && choices.size == hunks.size
-                    ) { Text("Save merge") }
+                    ) { Text("Merge copy back") }
+                    OutlinedButton(onClick = {
+                        editing = mergeText(result.chunks, choices.toMap())
+                    }, enabled = enabled) {
+                        Text("Edit merged")
+                    }
                 }
-                OutlinedButton(onClick = { editing = merge.text(choices.toMap()) }, enabled = enabled) {
-                    Text("Edit merged")
-                }
-                OutlinedButton(onClick = { onResolve(ConflictResolution.KeepLocal) }, enabled = enabled) {
-                    Text("Keep mine")
-                }
-                OutlinedButton(onClick = { onResolve(ConflictResolution.KeepRemote) }, enabled = enabled) {
-                    Text("Keep theirs")
-                }
-                OutlinedButton(onClick = { onResolve(ConflictResolution.KeepBoth) }, enabled = enabled) {
-                    Text("Keep both files")
-                }
+                OutlinedButton(onClick = onDiscardCopy, enabled = enabled) { Text("Discard copy") }
+                OutlinedButton(onClick = onKeepBoth, enabled = enabled) { Text("Keep both files") }
             }
         }
     }
@@ -161,7 +190,7 @@ private fun ConflictCard(
             onDismiss = { editing = null },
             onSave = { text ->
                 editing = null
-                onResolve(ConflictResolution.Merged(text))
+                onMergeBack(text)
             }
         )
     }
@@ -206,8 +235,8 @@ private fun VersionText(label: String, text: String) {
 }
 
 private val HUNK_OPTIONS = listOf(
-    ConflictChoice.LOCAL to "Mine",
-    ConflictChoice.REMOTE to "Theirs",
+    ConflictChoice.LOCAL to "Kept",
+    ConflictChoice.REMOTE to "Copy",
     ConflictChoice.BOTH to "Both",
     ConflictChoice.NEITHER to "Neither"
 )

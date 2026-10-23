@@ -45,11 +45,11 @@ Gradle graph), **actionlint** and **CodeQL**. Required checks and review-thread 
 
 | Module | Contents |
 | --- | --- |
-| `:core` | Pure Kotlin/JVM, no Android APIs. `notes/` (`LocalNoteStore`, `FrontMatter` note IDs, `NoteIndex` and note links, `NotePaths`, `Attachments`, `ChordSequence`), `merge/` (`LineDiff`, `ThreeWayMerge`), `sync/` (`SyncEngine`, `MultiDriveSync`, `SyncManifest`, `Hashing`, `RemoteDriveStore` interface, OneDrive store), `auth/` (Proton SRP and auth client). All format and sync logic lives here and is unit tested. |
+| `:core` | Pure Kotlin/JVM, no Android APIs. `notes/` (`LocalNoteStore`, `FrontMatter` note IDs, `NoteIndex` and note links, `NotePaths`, `Attachments`, `ChordSequence`), `sync/` (`SyncEngine`, `MultiDriveSync`, `ConflictMergeBack`, `Hashing`, `RemoteDriveStore` interface, OneDrive store), `auth/` (Proton SRP and auth client). The sync algorithm itself (planning, three-way merge, conflicted copies, manifest, drive scheduling) comes from the shared Rust core [marknotes-sync](https://github.com/MaxDac/marknotes-sync) through its UniFFI Kotlin binding; `SyncEngine` only executes its plan against the local tree and a `RemoteDriveStore`. All format and sync logic lives here and is unit tested. |
 | `:app` | Android UI and wiring: Compose + Material 3, Navigation Compose, MVVM with `StateFlow`, Room (drive accounts, sync metadata), manual DI, Dropbox store, Dropbox/MSAL sign-in, encrypted token storage. |
 | `:proton-drive` | Proton Drive `RemoteDriveStore` on the Proton Drive SDK (JNI, `arm64-v8a`/`x86_64` only) plus the protoncore network stack and address-key resolvers. |
 
-The sync engine only talks to `RemoteDriveStore`; tests use the in-memory `FakeRemoteDriveStore`. Put new
+The sync engine only talks to `RemoteDriveStore`; changes to the sync algorithm go in marknotes-sync (with the spec), not here; tests use the in-memory `FakeRemoteDriveStore`. Put new
 format, sync, link or attachment logic in `:core` so it can be tested on the JVM and against spec fixtures.
 
 ## Conventions

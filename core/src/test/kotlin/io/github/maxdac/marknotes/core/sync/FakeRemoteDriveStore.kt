@@ -11,13 +11,16 @@ class FakeRemoteDriveStore : RemoteDriveStore {
     var calls = mutableListOf<String>()
         private set
 
+    /** Paths whose [uploadNew] fails. */
+    val failingUploads = mutableSetOf<String>()
+
     private fun nextId() = "id-${++counter}"
     private fun nextVersion() = "v-${++counter}"
 
-    fun putFile(path: String, content: String): RemoteEntry {
+    fun putFile(path: String, content: String, modifiedMillis: Long = 0L): RemoteEntry {
         ensureParents(path)
         val existing = items[path]
-        val entry = RemoteEntry(path, existing?.entry?.id ?: nextId(), false, nextVersion(), 0L)
+        val entry = RemoteEntry(path, existing?.entry?.id ?: nextId(), false, nextVersion(), modifiedMillis)
         items[path] = Item(entry, content.toByteArray())
         return entry
     }
@@ -56,6 +59,7 @@ class FakeRemoteDriveStore : RemoteDriveStore {
 
     override suspend fun uploadNew(path: String, bytes: ByteArray): RemoteEntry {
         calls += "uploadNew:$path"
+        if (path in failingUploads) error("upload refused")
         check(path !in items) { "Already exists: $path" }
         ensureParents(path)
         val entry = RemoteEntry(path, nextId(), false, nextVersion(), 0L)

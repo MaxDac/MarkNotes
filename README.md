@@ -48,9 +48,13 @@ Simple Android markdown notes app with folders and sync to Proton Drive (unoffic
   - when only one side changed, that version wins. Deletions and moves propagate (a move is a delete
     plus a create);
   - edits made on both sides are merged line by line (a three-way merge against the last synced version).
-    Only overlapping edits become **conflicts**. For each conflicting change you pick **Mine**, **Theirs**,
-    **Both** or **Neither**, or you edit the merged text by hand (with git-style `<<<<<<<` markers). You can
-    also keep either whole version, or keep both files (the remote one is saved as `name (conflicted copy).md`).
+    When edits overlap, the newest version (by modification time; ties go to the drive) is kept and the other
+    one is saved next to it as `name (conflicted copy).md` with a new note ID, on every drive. The **Sync
+    conflicts** screen merges a copy back: for each conflicting change you pick **Kept**, **Copy**, **Both** or
+    **Neither**, or you edit the merged text by hand (with git-style `<<<<<<<` markers). You can also discard
+    the copy, or keep both files;
+  - the sync algorithm (planning, merge, conflicted copies, manifest) is the shared Rust core
+    [marknotes-sync](https://github.com/MaxDac/marknotes-sync), also used by the desktop and web apps.
 - **Proton login**: Proton SRP password login with TOTP two-factor authentication. CAPTCHA / human
   verification is not supported: you get a clear error instead.
 - **Dropbox / OneDrive login**: the official Dropbox SDK (OAuth 2 PKCE) and Microsoft MSAL.
@@ -67,7 +71,7 @@ Out of scope: search, tags, background sync, widgets, local encryption.
 
 | Module | What it contains |
 | --- | --- |
-| `:core` | Pure Kotlin/JVM: local note store, three-way merge, sync engine (single and multi-drive), `RemoteDriveStore` interface, OneDrive (Microsoft Graph) store, Proton SRP + auth client. Fully unit tested. |
+| `:core` | Pure Kotlin/JVM: local note store, sync engine (single and multi-drive) executing the plans of the shared [marknotes-sync](https://github.com/MaxDac/marknotes-sync) core, `RemoteDriveStore` interface, OneDrive (Microsoft Graph) store, Proton SRP + auth client. Fully unit tested. |
 | `:app` | Android app: Jetpack Compose + Material 3, Navigation Compose, MVVM with `StateFlow`, Room (drive accounts and sync metadata), manual DI, Dropbox store, Dropbox/MSAL sign-in. |
 | `:proton-drive` | Proton Drive store built on the [Proton Drive SDK](https://github.com/ProtonDriveApps/sdk), plus the protoncore network stack and address-key resolvers it needs. Always included. |
 
