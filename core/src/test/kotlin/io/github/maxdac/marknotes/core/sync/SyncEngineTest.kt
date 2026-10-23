@@ -1,5 +1,6 @@
 package io.github.maxdac.marknotes.core.sync
 
+import io.github.maxdac.marknotes.core.notes.FrontMatter
 import io.github.maxdac.marknotes.core.notes.LocalNoteStore
 import io.github.maxdac.marknotes.core.notes.NoteIds
 import io.github.maxdac.marknotes.sync.ConflictChoice
@@ -21,6 +22,13 @@ import org.junit.Test
 private fun hex(c: Char) = c.toString().repeat(64)
 
 private fun sha(text: String) = Hashing.sha256Hex(text.toByteArray())
+
+/** Body of a conflicted copy, after checking that the copy got a valid note id of its own. */
+internal fun copyBody(copy: String): String {
+    val doc = FrontMatter.parse(copy)
+    assertTrue("conflicted copy without a valid id: $copy", doc.id?.let(NoteIds::isValid) == true)
+    return doc.body
+}
 
 class SyncEngineTest {
     private lateinit var dir: File
@@ -185,8 +193,8 @@ class SyncEngineTest {
         assertEquals(null, conflict.baseText)
         assertEquals("local", local.read("n.md"))
         assertEquals("local", remote.content("n.md"))
-        assertEquals("remote", local.read(conflict.copyPath))
-        assertEquals("remote", remote.content(conflict.copyPath))
+        assertEquals("remote", copyBody(local.read(conflict.copyPath)))
+        assertEquals(local.read(conflict.copyPath), remote.content(conflict.copyPath))
         assertStable()
     }
 
@@ -232,8 +240,8 @@ class SyncEngineTest {
         assertEquals("base", conflict.baseText)
         assertEquals("local", local.read("dir/n.md"))
         assertEquals("local", remote.content("dir/n.md"))
-        assertEquals("remote", local.read("dir/n (conflicted copy).md"))
-        assertEquals("remote", remote.content("dir/n (conflicted copy).md"))
+        assertEquals("remote", copyBody(local.read("dir/n (conflicted copy).md")))
+        assertEquals(local.read("dir/n (conflicted copy).md"), remote.content("dir/n (conflicted copy).md"))
         assertTrue(result.localChanges > 0)
         assertStable()
     }
@@ -251,8 +259,8 @@ class SyncEngineTest {
         assertEquals(Side.REMOTE, conflict.winner)
         assertEquals("remote", local.read("n.md"))
         assertEquals("remote", remote.content("n.md"))
-        assertEquals("local", local.read(conflict.copyPath))
-        assertEquals("local", remote.content(conflict.copyPath))
+        assertEquals("local", copyBody(local.read(conflict.copyPath)))
+        assertEquals(local.read(conflict.copyPath), remote.content(conflict.copyPath))
         assertStable()
     }
 
@@ -585,7 +593,7 @@ class SyncEngineTest {
 
         assertEquals(listOf("n.md: upload refused"), result.errors)
         val conflict = result.conflicts.single()
-        assertEquals("remote", local.read(conflict.copyPath))
+        assertEquals("remote", copyBody(local.read(conflict.copyPath)))
         assertEquals("local", local.read("n.md"))
         assertEquals("remote", remote.content("n.md"))
         assertFalse(remote.exists(conflict.copyPath))
