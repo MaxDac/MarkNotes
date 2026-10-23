@@ -3,6 +3,7 @@ package io.github.maxdac.marknotes.ui.browser
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.maxdac.marknotes.AppContainer
+import io.github.maxdac.marknotes.core.notes.ChordSequences
 import io.github.maxdac.marknotes.core.notes.NoteEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +16,11 @@ class BrowserViewModel(private val container: AppContainer, val folder: String) 
 
     private val _entries = MutableStateFlow<List<NoteEntry>>(emptyList())
     val entries: StateFlow<List<NoteEntry>> = _entries
+
+    private val _chordPaths = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Paths of the [entries] that are chord sequences, shown with their own icon. */
+    val chordPaths: StateFlow<Set<String>> = _chordPaths
 
     private val _folders = MutableStateFlow<List<String>>(emptyList())
 
@@ -35,14 +41,24 @@ class BrowserViewModel(private val container: AppContainer, val folder: String) 
     fun refresh() {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                _entries.value = if (notes.isFolder(folder) || folder.isEmpty()) notes.list(folder) else emptyList()
+                val entries = if (notes.isFolder(folder) || folder.isEmpty()) notes.list(folder) else emptyList()
+                _chordPaths.value = entries.filter { !it.isFolder && isChordFile(it.path) }.mapTo(HashSet()) { it.path }
+                _entries.value = entries
                 _folders.value = notes.listFolders()
             }
         }
     }
 
+    private fun isChordFile(path: String): Boolean =
+        runCatching { ChordSequences.isChordFile(notes, path) }.getOrDefault(false)
+
     fun createNote(name: String, onCreated: (String) -> Unit) = act {
         val path = notes.createNote(folder, name)
+        withContext(Dispatchers.Main) { onCreated(path) }
+    }
+
+    fun createChordSequence(name: String, onCreated: (String) -> Unit) = act {
+        val path = notes.createNote(folder, name, ChordSequences.TYPE)
         withContext(Dispatchers.Main) { onCreated(path) }
     }
 

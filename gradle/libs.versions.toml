@@ -17,6 +17,9 @@ markwon = "4.6.2"
 prism4j = "2.0.0"
 dropbox = "8.0.2"
 msal = "8.5.0"
+# Shared sync core (https://github.com/MaxDac/marknotes-sync); the Kotlin bindings need JNA.
+marknotesSync = "0.1.0"
+jna = "5.17.0"
 junit = "4.13.2"
 androidxTestExtJunit = "1.3.0"
 androidxTestRunner = "1.7.0"
@@ -27,10 +30,10 @@ detekt = "1.23.8"
 # Only on the build classpath (AGP and plugins pull it in); pinned above their transitive version for security fixes.
 bouncycastle = "1.86"
 # Dropbox SDK's transitive jackson-core 2.15 has GHSA-r7wm-3cxj-wff9 and GHSA-7hhh-6rmp-j9qf.
-jackson = "2.18.12"
+jackson = "2.22.4"
 # Vulnerable transitive build-tool dependencies (AGP's bundletool/jetifier, prism4j-bundler), not shipped.
-commons-io = "2.16.1"
-jose4j = "0.9.6"
+commons-io = "2.22.0"
+jose4j = "0.9.7"
 jdom2 = "2.0.6.1"
 # Proton Drive SDK (Kotlin bindings over the C# SDK). Only used by :proton-drive.
 protonDriveSdk = "0.31.1"
@@ -69,6 +72,10 @@ prism4j = { group = "io.noties", name = "prism4j", version.ref = "prism4j" }
 prism4j-bundler = { group = "io.noties", name = "prism4j-bundler", version.ref = "prism4j" }
 dropbox-android = { group = "com.dropbox.core", name = "dropbox-android-sdk", version.ref = "dropbox" }
 msal = { group = "com.microsoft.identity.client", name = "msal", version.ref = "msal" }
+marknotes-sync-kotlin = { group = "io.github.maxdac.marknotes", name = "marknotes-sync-kotlin", version.ref = "marknotesSync" }
+marknotes-sync-natives = { group = "io.github.maxdac.marknotes", name = "marknotes-sync-natives", version.ref = "marknotesSync" }
+marknotes-sync-android = { group = "io.github.maxdac.marknotes", name = "marknotes-sync-android", version.ref = "marknotesSync" }
+jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }

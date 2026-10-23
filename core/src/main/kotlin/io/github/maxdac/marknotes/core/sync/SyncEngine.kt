@@ -1,42 +1,35 @@
 package io.github.maxdac.marknotes.core.sync
 
-import io.github.maxdac.marknotes.core.merge.MergeResult
-import io.github.maxdac.marknotes.core.merge.ThreeWayMerge
-import io.github.maxdac.marknotes.core.notes.Attachments
 import io.github.maxdac.marknotes.core.notes.LocalNoteStore
-import io.github.maxdac.marknotes.core.notes.NoteEntry
-import io.github.maxdac.marknotes.core.notes.NotePaths
+import io.github.maxdac.marknotes.core.notes.NoteIds
+import io.github.maxdac.marknotes.sync.Action
+import io.github.maxdac.marknotes.sync.LocalEntry as CoreLocalEntry
+import io.github.maxdac.marknotes.sync.ReconcileInput
+import io.github.maxdac.marknotes.sync.ReconcileOutcome
+import io.github.maxdac.marknotes.sync.RemoteEntry as CoreRemoteEntry
+import io.github.maxdac.marknotes.sync.Side
+import io.github.maxdac.marknotes.sync.SyncInput
+import io.github.maxdac.marknotes.sync.SyncRecord as CoreSyncRecord
+import io.github.maxdac.marknotes.sync.buildManifest
+import io.github.maxdac.marknotes.sync.isAttachmentPath
+import io.github.maxdac.marknotes.sync.isSyncedEntry
+import io.github.maxdac.marknotes.sync.plan
+import io.github.maxdac.marknotes.sync.reconcile
 import kotlinx.coroutines.CancellationException
 
-/** A note that changed on both sides since the last sync, with edits that could not be merged automatically. */
-class SyncConflict(
+/**
+ * A note edited on both sides whose edits could not be merged. The newest version ([winner]) was kept at [path]
+ * and the other one was saved as a new note at [copyPath]; see [ConflictMergeBack] to merge it back.
+ */
+data class SyncConflict(
     val path: String,
-    val localContent: ByteArray,
-    val remoteContent: ByteArray,
-    val remote: RemoteEntry,
-    /** Content of the note the last time it was in sync, if known. */
-    val baseContent: ByteArray? = null,
-    /** The drive the remote version comes from. */
+    val copyPath: String,
+    val winner: Side,
+    /** Text of the note the last time both sides agreed, if known. */
+    val baseText: String? = null,
+    /** The drive the conflict was found on. */
     val driveId: String = ""
-) {
-    val localText: String get() = localContent.toString(Charsets.UTF_8)
-    val remoteText: String get() = remoteContent.toString(Charsets.UTF_8)
-    val baseText: String? get() = baseContent?.toString(Charsets.UTF_8)
-
-    /** Three-way merge of the two versions; only the overlapping edits are left as conflicts. */
-    val merge: MergeResult by lazy { ThreeWayMerge.merge(baseText, localText, remoteText) }
-}
-
-sealed interface ConflictResolution {
-    data object KeepLocal : ConflictResolution
-    data object KeepRemote : ConflictResolution
-
-    /** Keeps the local version and saves the remote one as a "(conflicted copy)" sibling. */
-    data object KeepBoth : ConflictResolution
-
-    /** Saves [text] (typically the result of a hunk-by-hunk merge or a manual edit) on both sides. */
-    data class Merged(val text: String) : ConflictResolution
-}
+)
 
 data class SyncResult(
     val uploaded: Int,
@@ -47,28 +40,26 @@ data class SyncResult(
     val errors: List<String>,
     val merged: Int = 0
 ) {
-    /** Number of changes made to the local note tree, which other drives need to receive. */
-    val localChanges: Int get() = downloaded + deletedLocal + merged
+    /** Number of changes made to the local note tree (conflicted copies included), which other drives need. */
+    val localChanges: Int get() = downloaded + deletedLocal + merged + conflicts.size
 
     val summary: String
         get() = buildString {
             append("↑$uploaded ↓$downloaded")
             if (merged > 0) append(", merged $merged")
             if (deletedLocal + deletedRemote > 0) append(", deleted ${deletedLocal + deletedRemote}")
-            if (conflicts.isNotEmpty()) append(", ${conflicts.size} conflict(s)")
+            if (conflicts.isNotEmpty()) append(", ${conflicts.size} conflicted copy(ies)")
             if (errors.isNotEmpty()) append(", ${errors.size} error(s)")
         }
 }
 
 /**
- * Two-way sync between the local note tree and a remote folder.
+ * Two-way sync between the local note tree and one drive.
  *
- * For every path it compares the local state, the remote state and the [SyncRecord] saved the last
- * time both sides agreed. Only markdown notes, image attachments and folders are synced. Attachments
- * (see [Attachments]) are immutable binaries: uploaded, downloaded or deleted, never merged. Notes changed
- * on both sides are merged line by line against the last synced version kept in [base]; edits that overlap
- * are reported as [SyncConflict]s and left untouched until resolved. After each run the remote
- * [SyncManifest] is updated.
+ * The plan and the conflict handling come from the shared sync core
+ * ([marknotes-sync](https://github.com/MaxDac/marknotes-sync)), which implements the marknotes-spec sync rules for
+ * every MarkNotes app. This class only lists both sides, runs the planned actions against the stores and writes the
+ * drive's `.marknotes/manifest.json` (see [SyncManifest]).
  */
 @Suppress("LongParameterList")
 class SyncEngine(
@@ -83,65 +74,7 @@ class SyncEngine(
 
     suspend fun sync(): SyncResult = Run().execute()
 
-    suspend fun resolve(conflict: SyncConflict, resolution: ConflictResolution) {
-        when (resolution) {
-            ConflictResolution.KeepLocal -> keepLocal(conflict)
-
-            ConflictResolution.KeepRemote -> {
-                local.writeBytes(conflict.path, conflict.remoteContent)
-                recordFile(conflict.path, conflict.remote, conflict.remoteContent)
-            }
-
-            ConflictResolution.KeepBoth -> {
-                val copyPath = local.uniqueSibling(conflict.path, CONFLICT_SUFFIX)
-                local.writeBytes(copyPath, conflict.remoteContent)
-                val copy = remote.uploadNew(copyPath, conflict.remoteContent)
-                recordFile(copyPath, copy, conflict.remoteContent)
-                keepLocal(conflict)
-            }
-
-            is ConflictResolution.Merged -> {
-                val bytes = resolution.text.toByteArray(Charsets.UTF_8)
-                local.writeBytes(conflict.path, bytes)
-                val updated = remote.uploadRevision(conflict.remote, bytes)
-                recordFile(conflict.path, updated, bytes)
-            }
-        }
-    }
-
-    private suspend fun keepLocal(conflict: SyncConflict) {
-        val bytes = local.readBytes(conflict.path)
-        val updated = remote.uploadRevision(conflict.remote, bytes)
-        recordFile(conflict.path, updated, bytes)
-    }
-
-    private suspend fun recordFile(path: String, entry: RemoteEntry, bytes: ByteArray) {
-        recordFile(path, entry, Hashing.sha256Hex(bytes))
-        base.put(path, bytes)
-    }
-
-    private suspend fun recordFile(path: String, entry: RemoteEntry, hash: String) {
-        metadata.upsert(
-            SyncRecord(
-                path = path,
-                isFolder = false,
-                remoteId = entry.id,
-                remoteVersion = entry.version,
-                localHash = hash,
-                syncedAt = clock()
-            )
-        )
-    }
-
-    private suspend fun forget(path: String) {
-        metadata.delete(path)
-        base.delete(path)
-    }
-
-    private suspend fun recordFolder(path: String, remoteId: String) {
-        metadata.upsert(SyncRecord(path, true, remoteId, "", "", clock()))
-    }
-
+    @Suppress("TooManyFunctions")
     private inner class Run {
         private var uploaded = 0
         private var downloaded = 0
@@ -150,58 +83,33 @@ class SyncEngine(
         private var merged = 0
         private val conflicts = mutableListOf<SyncConflict>()
         private val errors = mutableListOf<String>()
-        private val localHashes = HashMap<String, String>()
-
-        private lateinit var localAll: List<NoteEntry>
-        private lateinit var remoteAll: List<RemoteEntry>
-        private lateinit var records: Map<String, SyncRecord>
-        private lateinit var localFolders: Set<String>
-        private lateinit var localFiles: Set<String>
-        private lateinit var remoteFolders: Map<String, RemoteEntry>
-        private lateinit var remoteFiles: Map<String, RemoteEntry>
-        private var manifest: SyncManifest? = null
-        private val skipped = mutableSetOf<String>()
-        private val pendingLocalFolderDeletes = mutableSetOf<String>()
-        private val pendingRemoteFolderDeletes = linkedMapOf<String, RemoteEntry>()
+        private val modified = HashMap<String, Long>()
+        private val knownPaths = HashSet<String>()
 
         suspend fun execute(): SyncResult {
-            localAll = local.listAll().filter { isSyncedEntry(it.path, it.isFolder) }
-            remoteAll =
-                remote.snapshot().filter { isSyncablePath(it.path) && isSyncedEntry(it.path, it.isFolder) }
-            records = metadata.all().associateBy { it.path }
-            manifest = readManifest()
-
-            localFolders = localAll.filter { it.isFolder }.map { it.path }.toSet()
-            localFiles = localAll.filter { !it.isFolder }.map { it.path }.toSet()
-            remoteFolders = remoteAll.filter { it.isFolder }.associateBy { it.path }
-            remoteFiles = remoteAll.filter { !it.isFolder }.associateBy { it.path }
-
-            (localFolders.filter { it in remoteFiles } + localFiles.filter { it in remoteFolders }).forEach {
-                skipped += it
-                errors += "$it: is a file on one side and a folder on the other"
+            val localEntries = local.listAll().filter { isSyncedEntry(it.path, it.isFolder) }.map {
+                modified[it.path] = it.modifiedMillis
+                val hash = if (it.isFolder) null else Hashing.sha256Hex(local.readBytes(it.path))
+                CoreLocalEntry(it.path, it.isFolder, it.modifiedMillis, hash)
             }
-
-            // Phase 1: folders, parents first.
-            val recordedFolders = records.values.filter { it.isFolder }.map { it.path }
-            val folderPaths = (localFolders + remoteFolders.keys + recordedFolders)
-                .toSortedSet(compareBy<String>({ NotePaths.depth(it) }, { it }))
-            for (path in folderPaths) {
-                if (path !in skipped) guarded(path) { syncFolder(path) }
+            val remoteEntries = remote.snapshot()
+            knownPaths += localEntries.map { it.path } + remoteEntries.map { it.path }
+            val manifest = readManifest()
+            val input = SyncInput(
+                local = localEntries,
+                remote = remoteEntries.map { it.toCore() },
+                records = metadata.all().map { it.toCore() },
+                manifest = manifest
+            )
+            for (action in plan(input).actions) {
+                guarded(action.path) { apply(action) }
             }
-
-            // Phase 2: notes.
-            val recordedFiles = records.values.filter { !it.isFolder }.map { it.path }
-            val filePaths = (localFiles + remoteFiles.keys + recordedFiles).toSortedSet()
-            for (path in filePaths) {
-                if (path !in skipped) guarded(path) { syncNote(path) }
+            guarded(SyncManifest.PATH) {
+                val records = metadata.all().map { it.toCore() }
+                buildManifest(records, deviceId, clock(), manifest)?.let {
+                    remote.writeManifest(it.toByteArray(Charsets.UTF_8))
+                }
             }
-
-            // Phase 3: folder deletions, top-most folders only.
-            applyFolderDeletes()
-
-            // Phase 4: publish the map of synced notes.
-            guarded(SyncManifest.PATH) { writeManifest() }
-
             return SyncResult(
                 uploaded,
                 downloaded,
@@ -213,8 +121,8 @@ class SyncEngine(
             )
         }
 
-        private suspend fun readManifest(): SyncManifest? = try {
-            remote.readManifest()?.let { SyncManifest.parse(it.toString(Charsets.UTF_8)) }
+        private suspend fun readManifest(): String? = try {
+            remote.readManifest()?.toString(Charsets.UTF_8)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -222,186 +130,118 @@ class SyncEngine(
             null
         }
 
-        private suspend fun writeManifest() {
-            val files = metadata.all().filter { !it.isFolder }.associate {
-                it.path to SyncManifest.Entry(it.localHash, it.remoteVersion, it.syncedAt)
-            }
-            val updated = SyncManifest(deviceId, clock(), files)
-            if (!updated.sameFilesAs(manifest)) remote.writeManifest(updated.toJson().toByteArray(Charsets.UTF_8))
-        }
+        @Suppress("CyclomaticComplexMethod")
+        private suspend fun apply(action: Action) {
+            when (action) {
+                is Action.Error -> errors += "${action.path}: ${action.message}"
 
-        /** Hash of the remote file content according to the manifest, when it describes this exact version. */
-        private fun manifestHash(remoteFile: RemoteEntry): String? =
-            manifest?.files?.get(remoteFile.path)?.takeIf { it.version == remoteFile.version }?.sha256
+                is Action.RecordFolder -> recordFolder(action.path, action.remoteId)
 
-        private suspend fun syncFolder(path: String) {
-            val inLocal = path in localFolders
-            val remoteFolder = remoteFolders[path]
-            val record = records[path]?.takeIf { it.isFolder }
-            when {
-                inLocal && remoteFolder != null -> {
-                    if (record == null || record.remoteId != remoteFolder.id) {
-                        recordFolder(path, remoteFolder.id)
-                    }
+                is Action.CreateRemoteFolder -> recordFolder(action.path, remote.createFolder(action.path).id)
+
+                is Action.CreateLocalFolder -> {
+                    local.createFolder(action.path)
+                    recordFolder(action.path, action.remoteId)
                 }
 
-                inLocal -> {
-                    if (record == null || hasLocalSurvivors(path)) {
-                        val created = remote.createFolder(path)
-                        recordFolder(path, created.id)
-                    } else {
-                        pendingLocalFolderDeletes += path
-                    }
-                }
+                is Action.Forget -> forget(action.path)
 
-                remoteFolder != null -> {
-                    if (record == null || hasRemoteSurvivors(path)) {
-                        local.createFolder(path)
-                        recordFolder(path, remoteFolder.id)
-                    } else {
-                        pendingRemoteFolderDeletes[path] = remoteFolder
-                    }
-                }
-
-                else -> metadata.delete(path)
-            }
-        }
-
-        private suspend fun syncNote(path: String) {
-            val inLocal = path in localFiles
-            val remoteFile = remoteFiles[path]
-            val record = records[path]?.takeIf { !it.isFolder }
-            when {
-                Attachments.isAttachment(path) -> syncAttachment(path, inLocal, remoteFile, record)
-                inLocal && remoteFile != null -> syncNoteOnBothSides(path, remoteFile, record)
-                inLocal -> syncLocalOnlyNote(path, record)
-                remoteFile != null -> syncRemoteOnlyNote(path, remoteFile, record)
-                else -> forget(path)
-            }
-        }
-
-        /**
-         * Attachments are named after their content hash, so they are immutable: they are only uploaded,
-         * downloaded or deleted, never merged, and no base copy is kept.
-         */
-        private suspend fun syncAttachment(
-            path: String,
-            inLocal: Boolean,
-            remoteFile: RemoteEntry?,
-            record: SyncRecord?
-        ) {
-            when {
-                inLocal && remoteFile != null -> {
-                    if (record == null || remoteChanged(remoteFile, record) || localHash(path) != record.localHash) {
-                        recordFile(path, remoteFile, localHash(path))
-                    }
-                }
-
-                inLocal -> syncLocalOnlyAttachment(path, record)
-
-                remoteFile != null -> syncRemoteOnlyAttachment(path, remoteFile, record)
-
-                else -> forget(path)
-            }
-        }
-
-        private suspend fun syncLocalOnlyAttachment(path: String, record: SyncRecord?) {
-            when {
-                record == null || localHash(path) != record.localHash -> {
-                    val entry = remote.uploadNew(path, local.readBytes(path))
-                    recordFile(path, entry, localHash(path))
+                is Action.UploadNew -> {
+                    val bytes = local.readBytes(action.path)
+                    recordFile(action.path, remote.uploadNew(action.path, bytes), bytes)
                     uploaded++
                 }
 
-                hasPendingAncestor(path, pendingLocalFolderDeletes) -> forget(path)
-
-                else -> {
-                    local.delete(path)
-                    forget(path)
-                    deletedLocal++
+                is Action.UploadRevision -> {
+                    val bytes = local.readBytes(action.path)
+                    recordFile(action.path, remote.uploadRevision(action.remote.toApp(), bytes), bytes)
+                    uploaded++
                 }
-            }
-        }
 
-        private suspend fun syncRemoteOnlyAttachment(path: String, remoteFile: RemoteEntry, record: SyncRecord?) {
-            when {
-                record == null || remoteChanged(remoteFile, record) -> {
-                    val bytes = remote.download(remoteFile)
-                    local.writeBytes(path, bytes)
-                    recordFile(path, remoteFile, Hashing.sha256Hex(bytes))
+                is Action.Download -> {
+                    val entry = action.remote.toApp()
+                    val bytes = remote.download(entry)
+                    local.writeBytes(action.path, bytes)
+                    recordFile(action.path, entry, bytes)
                     downloaded++
                 }
 
-                hasPendingAncestor(path, pendingRemoteFolderDeletes.keys) -> forget(path)
-
-                else -> {
-                    remote.delete(remoteFile)
-                    forget(path)
-                    deletedRemote++
+                is Action.Record -> {
+                    upsertFile(action.path, action.remote.toApp(), action.sha256)
+                    if (action.updateBase) base.put(action.path, local.readBytes(action.path))
                 }
-            }
-        }
 
-        private suspend fun syncNoteOnBothSides(path: String, remoteFile: RemoteEntry, record: SyncRecord?) {
-            if (record == null) {
-                compareOrMerge(path, remoteFile, record)
-                return
-            }
-            val localChanged = localHash(path) != record.localHash
-            var remoteChanged = remoteChanged(remoteFile, record)
-            if (remoteChanged && manifestHash(remoteFile) == record.localHash) {
-                // A new remote version with the same content (e.g. re-uploaded by another device).
-                recordFile(path, remoteFile, record.localHash)
-                remoteChanged = false
-            }
-            when {
-                localChanged && remoteChanged -> compareOrMerge(path, remoteFile, record)
-                localChanged -> uploadRevision(path, remoteFile)
-                remoteChanged -> download(path, remoteFile)
-            }
-        }
-
-        private suspend fun syncLocalOnlyNote(path: String, record: SyncRecord?) {
-            when {
-                record == null || localHash(path) != record.localHash -> uploadNew(path)
-
-                hasPendingAncestor(path, pendingLocalFolderDeletes) -> forget(path)
-
-                else -> {
-                    local.delete(path)
-                    forget(path)
+                is Action.DeleteLocal -> {
+                    local.delete(action.path)
+                    forget(action.path)
                     deletedLocal++
                 }
-            }
-        }
 
-        private suspend fun syncRemoteOnlyNote(path: String, remoteFile: RemoteEntry, record: SyncRecord?) {
-            when {
-                record == null || remoteChanged(remoteFile, record) -> download(path, remoteFile)
-
-                hasPendingAncestor(path, pendingRemoteFolderDeletes.keys) -> forget(path)
-
-                else -> {
-                    remote.delete(remoteFile)
-                    forget(path)
+                is Action.DeleteRemote -> {
+                    remote.delete(action.remote.toApp())
+                    forget(action.path)
                     deletedRemote++
                 }
+
+                is Action.DeleteLocalFolder -> {
+                    local.delete(action.path)
+                    forgetTree(action.path, action.forget)
+                    deletedLocal++
+                }
+
+                is Action.DeleteRemoteFolder -> {
+                    remote.delete(action.remote.toApp())
+                    forgetTree(action.path, action.forget)
+                    deletedRemote++
+                }
+
+                is Action.Reconcile -> reconcileNote(action.path, action.remote, action.hasRecord)
             }
         }
 
-        private suspend fun applyFolderDeletes() {
-            for (path in pendingLocalFolderDeletes) {
-                if (hasPendingAncestor(path, pendingLocalFolderDeletes)) continue
-                guarded(path) {
-                    local.delete(path)
-                    forgetTree(path)
+        /** The note changed on both sides: keep it, merge it, or keep the newest and save the other as a copy. */
+        private suspend fun reconcileNote(path: String, remoteEntry: CoreRemoteEntry, hasRecord: Boolean) {
+            val entry = remoteEntry.toApp()
+            val localBytes = local.readBytes(path)
+            val remoteBytes = remote.download(entry)
+            val baseText = if (hasRecord) base.get(path)?.toString(Charsets.UTF_8) else null
+            val outcome = reconcile(
+                ReconcileInput(
+                    path = path,
+                    local = localBytes.toString(Charsets.UTF_8),
+                    localModifiedMillis = modified[path] ?: 0L,
+                    remote = remoteBytes.toString(Charsets.UTF_8),
+                    remoteEntry = remoteEntry,
+                    base = baseText,
+                    existingPaths = knownPaths.toList(),
+                    newId = NoteIds.generate()
+                )
+            )
+            when (outcome) {
+                is ReconcileOutcome.Same -> recordFile(path, entry, localBytes)
+
+                is ReconcileOutcome.Merged -> {
+                    val bytes = outcome.text.toByteArray(Charsets.UTF_8)
+                    local.writeBytes(path, bytes)
+                    recordFile(path, remote.uploadRevision(entry, bytes), bytes)
+                    merged++
                 }
-            }
-            for ((path, entry) in pendingRemoteFolderDeletes) {
-                if (hasPendingAncestor(path, pendingRemoteFolderDeletes.keys)) continue
-                guarded(path) {
-                    remote.delete(entry)
-                    forgetTree(path)
+
+                is ReconcileOutcome.NewestWins -> {
+                    if (outcome.winner == Side.LOCAL) {
+                        recordFile(path, remote.uploadRevision(entry, localBytes), localBytes)
+                        uploaded++
+                    } else {
+                        local.writeBytes(path, remoteBytes)
+                        recordFile(path, entry, remoteBytes)
+                        downloaded++
+                    }
+                    val copyBytes = outcome.copyText.toByteArray(Charsets.UTF_8)
+                    local.writeBytes(outcome.copyPath, copyBytes)
+                    knownPaths += outcome.copyPath
+                    recordFile(outcome.copyPath, remote.uploadNew(outcome.copyPath, copyBytes), copyBytes)
+                    uploaded++
+                    conflicts += SyncConflict(path, outcome.copyPath, outcome.winner, baseText, driveId)
                 }
             }
         }
@@ -416,96 +256,52 @@ class SyncEngine(
             }
         }
 
-        private fun localHash(path: String): String =
-            localHashes.getOrPut(path) { Hashing.sha256Hex(local.readBytes(path)) }
-
-        private fun remoteChanged(entry: RemoteEntry, record: SyncRecord): Boolean =
-            entry.version != record.remoteVersion || entry.id != record.remoteId
-
-        private fun hasLocalSurvivors(folder: String): Boolean = localAll.any { entry ->
-            if (!NotePaths.isAncestor(folder, entry.path)) return@any false
-            val record = records[entry.path]
-            when {
-                entry.isFolder -> record == null
-                else -> record == null || localHash(entry.path) != record.localHash
-            }
+        /** Records a synced file and, for notes, keeps [bytes] as the base copy for later merges. */
+        private suspend fun recordFile(path: String, entry: RemoteEntry, bytes: ByteArray) {
+            upsertFile(path, entry, Hashing.sha256Hex(bytes))
+            if (!isAttachmentPath(path)) base.put(path, bytes)
         }
 
-        private fun hasRemoteSurvivors(folder: String): Boolean = remoteAll.any { entry ->
-            if (!NotePaths.isAncestor(folder, entry.path)) return@any false
-            val record = records[entry.path]
-            when {
-                entry.isFolder -> record == null
-                else -> record == null || remoteChanged(entry, record)
-            }
+        private suspend fun upsertFile(path: String, entry: RemoteEntry, hash: String) {
+            metadata.upsert(SyncRecord(path, false, entry.id, entry.version, hash, clock()))
         }
 
-        private fun hasPendingAncestor(path: String, pending: Set<String>): Boolean =
-            pending.any { it != path && NotePaths.isAncestor(it, path) }
+        private suspend fun recordFolder(path: String, remoteId: String) {
+            metadata.upsert(SyncRecord(path, true, remoteId, "", "", clock()))
+        }
 
-        private suspend fun forgetTree(folder: String) {
-            records.keys.filter { it == folder || NotePaths.isAncestor(folder, it) }.forEach { metadata.delete(it) }
+        private suspend fun forget(path: String) {
+            metadata.delete(path)
+            base.delete(path)
+        }
+
+        private suspend fun forgetTree(folder: String, paths: List<String>) {
+            paths.forEach { metadata.delete(it) }
             base.delete(folder)
         }
-
-        private suspend fun uploadNew(path: String) {
-            val bytes = local.readBytes(path)
-            val entry = remote.uploadNew(path, bytes)
-            recordFile(path, entry, bytes)
-            uploaded++
-        }
-
-        private suspend fun uploadRevision(path: String, remoteFile: RemoteEntry) {
-            val bytes = local.readBytes(path)
-            val entry = remote.uploadRevision(remoteFile, bytes)
-            recordFile(path, entry, bytes)
-            uploaded++
-        }
-
-        private suspend fun download(path: String, remoteFile: RemoteEntry) {
-            val bytes = remote.download(remoteFile)
-            local.writeBytes(path, bytes)
-            recordFile(path, remoteFile, bytes)
-            downloaded++
-        }
-
-        /** Both sides changed: identical content is just recorded, otherwise a three-way merge is attempted. */
-        private suspend fun compareOrMerge(path: String, remoteFile: RemoteEntry, record: SyncRecord?) {
-            val localBytes = local.readBytes(path)
-            if (manifestHash(remoteFile) == localHash(path)) {
-                recordFile(path, remoteFile, localBytes)
-                return
-            }
-            val remoteBytes = remote.download(remoteFile)
-            if (Hashing.sha256Hex(remoteBytes) == localHash(path)) {
-                recordFile(path, remoteFile, localBytes)
-                return
-            }
-            val baseBytes = if (record != null) base.get(path) else null
-            val conflict = SyncConflict(path, localBytes, remoteBytes, remoteFile, baseBytes, driveId)
-            if (baseBytes != null && !conflict.merge.hasConflicts) {
-                val mergedBytes = conflict.merge.text().toByteArray(Charsets.UTF_8)
-                local.writeBytes(path, mergedBytes)
-                val entry = remote.uploadRevision(remoteFile, mergedBytes)
-                recordFile(path, entry, mergedBytes)
-                merged++
-            } else {
-                conflicts += conflict
-            }
-        }
-    }
-
-    companion object {
-        const val CONFLICT_SUFFIX = " (conflicted copy)"
-
-        fun isSyncablePath(path: String): Boolean = try {
-            path.isNotEmpty() && NotePaths.normalize(path) == path
-        } catch (e: IllegalArgumentException) {
-            false
-        }
-
-        /** Folders, markdown notes and image attachments are synced; anything else is ignored. */
-        fun isSyncedEntry(path: String, isFolder: Boolean): Boolean =
-            isFolder || Attachments.isAttachment(path) || (NotePaths.isNote(path) && !Attachments.isInFolder(path))
     }
 }
+
+private val Action.path: String
+    get() = when (this) {
+        is Action.Error -> path
+        is Action.RecordFolder -> path
+        is Action.CreateRemoteFolder -> path
+        is Action.CreateLocalFolder -> path
+        is Action.Forget -> path
+        is Action.UploadNew -> path
+        is Action.UploadRevision -> path
+        is Action.Download -> path
+        is Action.Record -> path
+        is Action.DeleteLocal -> path
+        is Action.DeleteRemote -> path
+        is Action.DeleteLocalFolder -> path
+        is Action.DeleteRemoteFolder -> path
+        is Action.Reconcile -> path
+    }
+
+private fun RemoteEntry.toCore() = CoreRemoteEntry(path, id, isFolder, version, modifiedMillis)
+
+private fun CoreRemoteEntry.toApp() = RemoteEntry(path, id, isFolder, version, modifiedMillis)
+
+private fun SyncRecord.toCore() = CoreSyncRecord(path, isFolder, remoteId, remoteVersion, localHash, syncedAt)

@@ -1,7 +1,5 @@
 package io.github.maxdac.marknotes.core.parity
 
-import io.github.maxdac.marknotes.core.merge.ConflictChoice
-import io.github.maxdac.marknotes.core.merge.ThreeWayMerge
 import io.github.maxdac.marknotes.core.notes.Attachments
 import io.github.maxdac.marknotes.core.notes.FrontMatter
 import io.github.maxdac.marknotes.core.notes.IndexedNote
@@ -9,8 +7,6 @@ import io.github.maxdac.marknotes.core.notes.LocalNoteStore
 import io.github.maxdac.marknotes.core.notes.NoteIds
 import io.github.maxdac.marknotes.core.notes.NoteIndex
 import io.github.maxdac.marknotes.core.notes.NoteLinks
-import io.github.maxdac.marknotes.core.sync.SyncEngine
-import io.github.maxdac.marknotes.core.sync.SyncManifest
 import java.nio.file.Files
 import kotlin.random.Random
 import kotlinx.serialization.json.JsonArray
@@ -22,9 +18,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
 
 /** How a marknotes-spec fixture file is run on Android. */
 sealed interface ParityMapping {
@@ -81,32 +75,8 @@ object CoreParity {
         "attachments/refs" to ParityMapping.Run { c ->
             list("refs", Attachments.references(c.string("text")).sorted())
         },
-        "manifest/parse" to ParityMapping.Run { c ->
-            JsonObject(mapOf("manifest" to (SyncManifest.parse(c.string("json"))?.let(::manifestJson) ?: JsonNull)))
-        },
-        "manifest/serialize" to ParityMapping.Run { c ->
-            val files = c.input.getValue("files").jsonObject.mapValues { (_, value) ->
-                val e = value.jsonObject
-                SyncManifest.Entry(e.str("sha256"), e.str("version"), e.getValue("syncedAt").jsonPrimitive.long)
-            }
-            val manifest = SyncManifest(c.string("deviceId"), c.input.getValue("updatedAt").jsonPrimitive.long, files)
-            field("json", manifest.toJson())
-        },
-        "duplicate-ids/resolve" to ParityMapping.Run(run = ::resolveDuplicates),
-        "merge/merge3" to ParityMapping.Run { c ->
-            val result = ThreeWayMerge.merge(c.stringOrNull("base"), c.string("local"), c.string("remote"))
-            val choices = (c.input["choices"] as? JsonObject).orEmpty().entries.associate { (index, choice) ->
-                index.toInt() to ConflictChoice.valueOf(choice.jsonPrimitive.content.uppercase())
-            }
-            buildJsonObject {
-                put("text", result.text(choices))
-                put("conflicts", result.conflicts.size)
-            }
-        },
-        "merge/conflict-copy-name" to ParityMapping.Run { c ->
-            withTempStore { store -> field("path", store.uniqueSibling(c.string("path"), SyncEngine.CONFLICT_SUFFIX)) }
-        }
-    )
+        "duplicate-ids/resolve" to ParityMapping.Run(run = ::resolveDuplicates)
+    ) + ChordParity.mappings + SyncParity.mappings
 
     private fun field(key: String, value: Any?): JsonObject = JsonObject(
         mapOf(
@@ -149,19 +119,5 @@ object CoreParity {
             store.write(note.str("path"), "---\nid: ${note.str("id")}\n---\n")
         }
         list("reassigned", NoteIndex.build(store, Random(0)).rewritten.sorted())
-    }
-
-    private fun manifestJson(manifest: SyncManifest): JsonElement = buildJsonObject {
-        put("deviceId", manifest.deviceId)
-        put("updatedAt", manifest.updatedAt)
-        putJsonObject("files") {
-            manifest.files.forEach { (path, entry) ->
-                putJsonObject(path) {
-                    put("sha256", entry.sha256)
-                    put("version", entry.version)
-                    put("syncedAt", entry.syncedAt)
-                }
-            }
-        }
     }
 }
