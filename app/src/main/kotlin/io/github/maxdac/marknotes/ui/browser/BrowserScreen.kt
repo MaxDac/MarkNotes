@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
@@ -46,6 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -75,6 +77,10 @@ import io.github.maxdac.marknotes.ui.MarkNotesLogo
 import kotlinx.coroutines.launch
 
 const val NEW_NOTE_FAB_TAG = "new-note-fab"
+const val NEW_NOTE_MENU_ITEM_TAG = "new-note-menu-item"
+const val NEW_CHORDS_MENU_ITEM_TAG = "new-chords-menu-item"
+const val EMPTY_NEW_NOTE_TAG = "empty-new-note"
+const val EMPTY_NEW_CHORDS_TAG = "empty-new-chords"
 
 private sealed interface BrowserDialog {
     data object NewNote : BrowserDialog
@@ -157,9 +163,6 @@ fun BrowserScreen(
                                 Icon(Icons.Filled.AccountTree, contentDescription = "Folders")
                             }
                         }
-                        IconButton(onClick = { dialog = BrowserDialog.NewChords }) {
-                            Icon(Icons.Filled.LibraryMusic, contentDescription = "New chord sequence")
-                        }
                         IconButton(onClick = { dialog = BrowserDialog.NewFolder }) {
                             Icon(Icons.Filled.CreateNewFolder, contentDescription = "New folder")
                         }
@@ -173,12 +176,7 @@ fun BrowserScreen(
                 )
             },
             floatingActionButton = {
-                ExtendedFloatingActionButton(
-                    onClick = { dialog = BrowserDialog.NewNote },
-                    modifier = Modifier.testTag(NEW_NOTE_FAB_TAG),
-                    icon = { Icon(Icons.Filled.Edit, contentDescription = "New note") },
-                    text = { Text("New note") }
-                )
+                NewEntryFab(onDialog = { dialog = it })
             }
         ) { padding ->
             BrowserContent(
@@ -208,6 +206,40 @@ fun BrowserScreen(
             text = { Text(message) },
             confirmButton = { TextButton(onClick = vm::clearError) { Text("OK") } }
         )
+    }
+}
+
+/** The floating "New" button: opens a small menu to create a note or a chord sequence. */
+@Composable
+private fun NewEntryFab(onDialog: (BrowserDialog) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        ExtendedFloatingActionButton(
+            onClick = { expanded = true },
+            modifier = Modifier.testTag(NEW_NOTE_FAB_TAG),
+            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+            text = { Text("New") }
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("New note") },
+                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    onDialog(BrowserDialog.NewNote)
+                },
+                modifier = Modifier.testTag(NEW_NOTE_MENU_ITEM_TAG)
+            )
+            DropdownMenuItem(
+                text = { Text("New chord sequence") },
+                leadingIcon = { Icon(Icons.Filled.LibraryMusic, contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    onDialog(BrowserDialog.NewChords)
+                },
+                modifier = Modifier.testTag(NEW_CHORDS_MENU_ITEM_TAG)
+            )
+        }
     }
 }
 
@@ -246,6 +278,30 @@ private fun BrowserContent(
             ) {
                 MarkNotesLogo(Modifier.padding(bottom = 16.dp), size = 96.dp)
                 Text("No notes here yet", style = MaterialTheme.typography.bodyLarge)
+                Column(
+                    Modifier.padding(top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    OutlinedButton(
+                        onClick = { onDialog(BrowserDialog.NewNote) },
+                        modifier = Modifier.testTag(EMPTY_NEW_NOTE_TAG)
+                    ) {
+                        Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                        Text("New note")
+                    }
+                    OutlinedButton(
+                        onClick = { onDialog(BrowserDialog.NewChords) },
+                        modifier = Modifier.testTag(EMPTY_NEW_CHORDS_TAG)
+                    ) {
+                        Icon(
+                            Icons.Filled.LibraryMusic,
+                            contentDescription = null,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        Text("New chord sequence")
+                    }
+                }
             }
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
