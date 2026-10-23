@@ -449,7 +449,7 @@ private class MarkNotesPlugin(
 }
 
 @Composable
-private fun MarkdownPreview(text: String, notesRoot: File, index: NoteIndex?, onNoteLink: (String) -> Unit) {
+internal fun MarkdownPreview(text: String, notesRoot: File, index: NoteIndex?, onNoteLink: (String) -> Unit) {
     val context = LocalContext.current
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val brokenColor = MaterialTheme.colorScheme.error.toArgb()

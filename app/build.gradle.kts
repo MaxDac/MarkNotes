@@ -122,7 +122,13 @@ dependencies {
     // Prism4j generates its grammar locator with a javac annotation processor (see CodeGrammars.java).
     annotationProcessor(libs.prism4j.bundler)
     implementation(libs.dropbox.android)
+    // Text extraction from shared PDFs (see ui/importing).
+    implementation(libs.pdfbox.android)
     constraints {
+        // pdfbox-android's Bouncy Castle 1.72 has known vulnerabilities.
+        implementation(libs.bouncycastle.bcprov.jdk15to18)
+        implementation(libs.bouncycastle.bcpkix.jdk15to18)
+        implementation(libs.bouncycastle.bcutil.jdk15to18)
         // The Dropbox SDK's jackson-core 2.15 has known vulnerabilities (GHSA-r7wm-3cxj-wff9, GHSA-7hhh-6rmp-j9qf).
         implementation(libs.jackson.core)
         // prism4j-bundler's commons-io 2.6 (GHSA-78wr-2p64-hpwj, GHSA-gwrp-pvrq-jmwv); compile time only.

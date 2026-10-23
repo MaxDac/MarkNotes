@@ -31,7 +31,11 @@ class ImageImporter(private val context: Context) {
         val extension = Attachments.extensionFor(mime)
             ?: throw ImageImportException("Only PNG, JPEG, GIF and WebP images can be added to notes.")
         val fileName = displayName(uri) ?: fallbackName
-        val original = readAll(uri)
+        return fromBytes(readAll(uri), extension, fileName)
+    }
+
+    /** Prepares image bytes that were already read (for example from a Word document) with the same rules. */
+    fun fromBytes(original: ByteArray, extension: String, fileName: String): ImportedImage {
         val bytes = if (extension == "gif") original else process(original, extension)
         checkSize(bytes.size.toLong(), Attachments.MAX_BYTES)
         return ImportedImage(bytes, extension, fileName)

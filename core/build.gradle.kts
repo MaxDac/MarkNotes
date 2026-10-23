@@ -20,6 +20,7 @@ dependencies {
     api(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.bcrypt)
+    implementation(libs.jsoup)
     api(libs.marknotes.sync.kotlin)
     // JNA loads the native sync library: :app ships the Android AAR, JVM tests the jar and the host libraries.
     compileOnly(libs.jna)
