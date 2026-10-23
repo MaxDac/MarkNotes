@@ -1,0 +1,22 @@
+name: Main CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+jobs:
+  # Checks / F-Droid build uploads the from-source unsigned release APK (fdroid-unsigned-apk) as this run's artifact.
+  checks:
+    name: Checks
+    uses: ./.github/workflows/checks.yml

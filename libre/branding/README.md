@@ -13,11 +13,11 @@ The shared MarkNotes icon, used by the Android app, the desktop (Electron) app a
 The SVGs are the source of truth. The Android assets are generated from them and committed, so builds need
 no extra tooling:
 
-- `app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml` (adaptive icon);
-- `app/src/main/res/drawable/ic_launcher_foreground.xml` (content scaled into the 66dp safe zone);
-- `app/src/main/res/drawable/ic_launcher_monochrome.xml` (themed icon layer);
-- `app/src/main/res/values/ic_launcher_background.xml` (`#1E5EB4`);
-- `app/src/main/res/drawable/marknotes_mark.xml` (in-app logo);
+- `app-shared/src/main/res/mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml` (adaptive icon);
+- `app-shared/src/main/res/drawable/ic_launcher_foreground.xml` (content scaled into the 66dp safe zone);
+- `app-shared/src/main/res/drawable/ic_launcher_monochrome.xml` (themed icon layer);
+- `app-shared/src/main/res/values/ic_launcher_background.xml` (`#1E5EB4`);
+- `app-shared/src/main/res/drawable/marknotes_mark.xml` (in-app logo);
 - the PNGs in `png/`.
 
 To regenerate them after changing an SVG, run from the repository root (needs only a JDK 17+, e.g. the one

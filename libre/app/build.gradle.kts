@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.maxdac.marknotes.libre"
         minSdk = 29
         targetSdk = 36
-        // Bumped by the "Prepare release" workflow; F-Droid reads these literals to detect new versions.
-        versionCode = 1
+        // Set by the "Prepare release" workflow (versionCode = X*10000 + Y*100 + Z); F-Droid reads these literals.
+        versionCode = 100
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // marknotes-sync's native library is built for devices (arm64) and emulators (x86_64) only.
@@ -49,6 +49,8 @@ android {
             }
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // The git commit recorded in the APK would differ between F-Droid's rebuild and ours.
+            vcsInfo.include = false
         }
     }
 

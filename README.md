@@ -244,21 +244,17 @@ MarkNotes follows Proton's rules for third-party personal projects:
 
 ## License
 
-MarkNotes is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md).
-You may use, copy, fork, and modify the code for any noncommercial purpose (personal use, study,
-research, hobby projects, and use by charities, educational or public institutions). Any
-commercial use is not permitted.
-
-Note: this is not an OSI-approved open source license, since it restricts commercial use.
+MarkNotes is free software: you can redistribute it and/or modify it under the terms of the
+[GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version (GPL-3.0-or-later). It is distributed WITHOUT ANY WARRANTY.
 
 ## Licensing notes
 
 The license above covers this project's own code. Third-party dependencies remain under their own
 licenses.
 
-The Proton Drive SDK and protoncore libraries are GPLv3, and every build includes them, so builds must
-respect the GPLv3. The
-SRP implementation in `:core` was written for this project, following the public protocol as
+The Proton Drive SDK and protoncore libraries are GPLv3, which the GPL-3.0-or-later license is compatible with. The
+SRP implementation in `:pro-core` was written for this project, following the public protocol as
 implemented in Proton's MIT-licensed [go-srp](https://github.com/ProtonMail/go-srp). No
 protoncore_android code was copied; it is used as a library dependency.
 

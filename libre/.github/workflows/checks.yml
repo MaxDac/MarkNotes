@@ -1,0 +1,207 @@
+name: Checks
+
+# Reusable checks shared by PR CI, Main CI and Release.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+jobs:
+  lint:
+    name: Lint (ktlint, detekt, Android Lint)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-android-build
+      - name: Run ktlint, detekt and Android Lint
+        run: ./gradlew ktlintCheck detekt lintDebug --continue
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lint-reports
+          path: |
+            build/reports/detekt/
+            **/build/reports/ktlint/
+            **/build/reports/lint-results-*.html
+            **/build/reports/lint-results-*.xml
+          if-no-files-found: ignore
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-android-build
+      - name: Run unit tests
+        # :core is a plain JVM module, so its tests run under `test` rather than `testDebugUnitTest`.
+        run: ./gradlew testDebugUnitTest :core:test --continue
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-reports
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+          if-no-files-found: ignore
+
+  parity:
+    name: Parity (marknotes-spec fixtures)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: ./.github/actions/setup-android-build
+      - name: Run the marknotes-spec fixtures
+        # Fails if the spec/ submodule is missing, a fixture file is unmapped, or Android stops matching a case.
+        run: >-
+          ./gradlew :core:parityTest :app-shared:testDebugUnitTest --tests 'io.github.maxdac.marknotes.parity.*'
+          -Pmarknotes.parity.required=true --continue
+      - name: Upload parity reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: parity-reports
+          path: |
+            core/build/reports/tests/parityTest/
+            core/build/test-results/parityTest/
+            app-shared/build/reports/tests/testDebugUnitTest/
+            app-shared/build/test-results/testDebugUnitTest/
+          if-no-files-found: ignore
+
+  instrumented-tests:
+    name: Instrumented tests (emulator)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Free disk space
+        # The emulator needs several GB for its userdata partition; hosted runners ship with little free space.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: ./.github/actions/setup-android-build
+      - name: Build test APKs
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Run instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          cores: 4
+          ram-size: 4096M
+          disk-size: 4096M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: ./gradlew --continue :app:connectedDebugAndroidTest
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: instrumented-test-reports
+          path: |
+            **/build/reports/androidTests/
+            **/build/outputs/androidTest-results/
+          if-no-files-found: ignore
+
+  build:
+    name: Build debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-android-build
+      - name: Assemble debug
+        run: ./gradlew assembleDebug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  fdroid-build:
+    name: F-Droid build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install fdroidserver
+        run: pipx install fdroidserver==2.4.5
+      - name: Lint the F-Droid recipe (.fdroid.yml)
+        run: scripts/fdroid-lint.sh
+      - uses: ./.github/actions/setup-android-build
+      - uses: ./.github/actions/setup-sync-toolchain
+      # The same path as F-Droid's build server (.fdroid.yml): marknotes-sync from source, no prebuilt binaries.
+      - name: Build marknotes-sync from source
+        run: scripts/build-sync-from-source.sh "$RUNNER_TEMP/marknotes-sync"
+      - name: Build the unsigned release APK
+        run: >-
+          ./gradlew :app:assembleRelease --no-build-cache
+          "-Pmarknotes.sync.fromSource=$RUNNER_TEMP/marknotes-sync"
+      - name: Scan the APK for non-free code
+        run: fdroid scanner --exit-code app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Upload the unsigned release APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: fdroid-unsigned-apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+
+  reproducible-build:
+    name: Reproducible build
+    needs: fdroid-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: rebuild/marknotes-android
+    # F-Droid ships the GitHub release APK only if its own rebuild matches it byte for byte (apart from the signature).
+    # Rebuild on another runner, at another path, in another time zone and locale, and compare with the F-Droid build.
+    env:
+      TZ: Pacific/Kiritimati
+      LC_ALL: C.UTF-8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: rebuild/marknotes-android
+      - uses: ./rebuild/marknotes-android/.github/actions/setup-android-build
+      - uses: ./rebuild/marknotes-android/.github/actions/setup-sync-toolchain
+      - name: Build marknotes-sync from source
+        run: scripts/build-sync-from-source.sh "$RUNNER_TEMP/elsewhere/sync"
+      - name: Build the unsigned release APK
+        run: >-
+          ./gradlew :app:assembleRelease --no-build-cache
+          "-Pmarknotes.sync.fromSource=$RUNNER_TEMP/elsewhere/sync"
+      - uses: actions/download-artifact@v8
+        with:
+          name: fdroid-unsigned-apk
+          path: ${{ runner.temp }}/fdroid-build
+      - name: Compare with the F-Droid build
+        run: |
+          first="$RUNNER_TEMP/fdroid-build/app-release-unsigned.apk"
+          second=app/build/outputs/apk/release/app-release-unsigned.apk
+          sha256sum "$first" "$second"
+          if cmp -s "$first" "$second"; then
+            echo "The release APK is reproducible."
+            exit 0
+          fi
+          echo "::error::The two release builds differ; F-Droid could not verify the release APK. Diff follows."
+          sudo apt-get install -y -qq diffoscope-minimal > /dev/null
+          diffoscope --text - --max-text-report-size 200000 "$first" "$second" || true
+          exit 1

@@ -1,0 +1,51 @@
+AntiFeatures:
+  NonFreeNet:
+    en-US: Optional sync uses Dropbox, a proprietary network service.
+Categories:
+  - Note
+  - Writing
+License: GPL-3.0-or-later
+AuthorName: MaxDac
+SourceCode: https://github.com/MaxDac/marknotes-android
+IssueTracker: https://github.com/MaxDac/marknotes-android/issues
+Changelog: https://github.com/MaxDac/marknotes-android/releases
+
+AutoName: MarkNotes
+
+RepoType: git
+Repo: https://github.com/MaxDac/marknotes-android.git
+Binaries: https://github.com/MaxDac/marknotes-android/releases/download/v%v/marknotes-libre-%v.apk
+
+Builds:
+  - versionName: 0.1.0
+    versionCode: 100
+    commit: v0.1.0
+    subdir: app
+    sudo:
+      - apt-get update
+      - apt-get install -y gcc libc-dev
+    gradle:
+      - yes
+    srclibs:
+      - rustup@1.29.2
+      - marknotes-sync@v0.1.0
+    prebuild:
+      - rm -rf $$marknotes-sync$$/bindings/npm
+      - $$rustup$$/rustup-init.sh -y --default-toolchain none --profile minimal --no-modify-path
+      - source $HOME/.cargo/env
+      - rustup toolchain install 1.99.1 --profile minimal --target aarch64-linux-android,x86_64-linux-android
+      - cargo +1.99.1 install cargo-ndk --version 4.1.2 --locked
+    build:
+      - source $HOME/.cargo/env
+      - ANDROID_NDK_HOME=$$NDK$$ GRADLE=gradle ../scripts/build-sync-from-source.sh
+        $$marknotes-sync$$
+    ndk: r27d
+    gradleprops:
+      - marknotes.sync.fromSource=$$marknotes-sync$$
+
+AllowedAPKSigningKeys: dd8f0431d7b6fd06b85ce515c212ebc25475e925b8a4b827f3983560ddee6b58
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+$
+CurrentVersion: 0.1.0
+CurrentVersionCode: 100

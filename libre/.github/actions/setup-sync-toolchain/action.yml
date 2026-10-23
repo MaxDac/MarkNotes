@@ -1,0 +1,29 @@
+name: Set up marknotes-sync toolchain
+description: >-
+  Installs what scripts/build-sync-from-source.sh needs to build marknotes-sync from source: the pinned Rust toolchain
+  with the Android targets, cargo-ndk and the pinned NDK. Keep the versions in sync with the script and .fdroid.yml.
+runs:
+  using: composite
+  steps:
+    - name: Install NDK r27d
+      shell: bash
+      run: |
+        sdkmanager="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+        "$sdkmanager" --install "ndk;27.3.13750724" > /dev/null
+        echo "ANDROID_NDK_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}/ndk/27.3.13750724" >> "$GITHUB_ENV"
+
+    - name: Install Rust 1.99.1
+      shell: bash
+      run: rustup toolchain install 1.99.1 --profile minimal --target aarch64-linux-android,x86_64-linux-android
+
+    - name: Cache cargo-ndk
+      id: cargo-ndk-cache
+      uses: actions/cache@v6
+      with:
+        path: ~/.cargo/bin/cargo-ndk
+        key: cargo-ndk-4.1.2-rust-1.99.1-${{ runner.os }}
+
+    - name: Install cargo-ndk 4.1.2
+      if: steps.cargo-ndk-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo +1.99.1 install cargo-ndk --version 4.1.2 --locked

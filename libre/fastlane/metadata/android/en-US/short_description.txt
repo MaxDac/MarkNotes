@@ -1,0 +1,1 @@
+Offline-first Markdown notes with folders, note links and Dropbox sync

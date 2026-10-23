@@ -1,0 +1,23 @@
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      androidx:
+        patterns: ["androidx.*"]
+      kotlin:
+        patterns: ["org.jetbrains.kotlin*", "com.google.devtools.ksp*", "org.jetbrains.kotlinx*"]
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/*"]
+    schedule:
+      interval: weekly
+
+  # The spec/ submodule (MaxDac/marknotes-spec): bumps run the new fixtures in the Parity check.
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: weekly
