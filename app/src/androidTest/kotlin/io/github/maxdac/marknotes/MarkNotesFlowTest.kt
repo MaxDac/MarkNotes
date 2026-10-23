@@ -18,7 +18,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.maxdac.marknotes.core.notes.ChordSequences
 import io.github.maxdac.marknotes.core.notes.FrontMatter
+import io.github.maxdac.marknotes.ui.browser.EMPTY_NEW_CHORDS_TAG
+import io.github.maxdac.marknotes.ui.browser.EMPTY_NEW_NOTE_TAG
+import io.github.maxdac.marknotes.ui.browser.NEW_CHORDS_MENU_ITEM_TAG
 import io.github.maxdac.marknotes.ui.browser.NEW_NOTE_FAB_TAG
+import io.github.maxdac.marknotes.ui.browser.NEW_NOTE_MENU_ITEM_TAG
 import io.github.maxdac.marknotes.ui.chords.ADD_CHORD_FAB_TAG
 import io.github.maxdac.marknotes.ui.chords.CHORD_LIST_TAG
 import io.github.maxdac.marknotes.ui.chords.CHORD_NAME_FIELD_TAG
@@ -65,10 +69,53 @@ class MarkNotesFlowTest {
     /** The note text without its (hidden) front-matter. */
     private fun bodyOf(note: File) = FrontMatter.parse(note.readText()).body
 
+    /** Opens the floating "New" menu and picks the item with [itemTag]. */
+    private fun newFromFab(itemTag: String) {
+        compose.onNodeWithTag(NEW_NOTE_FAB_TAG).performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag(itemTag), timeoutMillis = 5_000)
+        compose.onNodeWithTag(itemTag).performClick()
+    }
+
     @Test
     fun emptyLibraryShowsPlaceholder() {
         compose.onNodeWithText("No notes here yet").assertExists()
         compose.onNodeWithTag(NEW_NOTE_FAB_TAG).assertExists()
+        compose.onNodeWithTag(EMPTY_NEW_NOTE_TAG).assertExists()
+        compose.onNodeWithTag(EMPTY_NEW_CHORDS_TAG).assertExists()
+    }
+
+    @Test
+    fun fabMenuOffersNoteAndChordSequence() {
+        compose.onNodeWithTag(NEW_NOTE_FAB_TAG).performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag(NEW_NOTE_MENU_ITEM_TAG), timeoutMillis = 5_000)
+        compose.onNodeWithTag(NEW_CHORDS_MENU_ITEM_TAG).performClick()
+        compose.waitUntilExactlyOneExists(hasSetTextAction(), timeoutMillis = 5_000)
+        compose.onNode(hasSetTextAction()).performTextInput("Tune")
+        compose.onNodeWithText("OK").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag(ADD_CHORD_FAB_TAG), timeoutMillis = 5_000)
+    }
+
+    @Test
+    fun emptyFolderButtonsCreateNoteAndChordSequence() {
+        compose.onNodeWithTag(EMPTY_NEW_CHORDS_TAG).performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("Riffs")
+        compose.onNodeWithText("OK").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag(ADD_CHORD_FAB_TAG), timeoutMillis = 5_000)
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Riffs"))
+        assertTrue(ChordSequences.isChordSequence(File(notesDir, "Riffs.md").readText()))
+
+        compose.onNodeWithContentDescription("New folder").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("Empty")
+        compose.onNodeWithText("OK").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Empty"))
+        compose.onNodeWithText("Empty").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag(EMPTY_NEW_NOTE_TAG))
+        compose.onNodeWithTag(EMPTY_NEW_NOTE_TAG).performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("Plain")
+        compose.onNodeWithText("OK").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag(EDITOR_FIELD_TAG), timeoutMillis = 5_000)
+        assertTrue(File(notesDir, "Empty/Plain.md").isFile)
     }
 
     @Test
@@ -82,7 +129,7 @@ class MarkNotesFlowTest {
         compose.waitUntilExactlyOneExists(hasText("No notes here yet"))
         compose.onNodeWithContentDescription("Back").assertExists()
 
-        compose.onNodeWithTag(NEW_NOTE_FAB_TAG).performClick()
+        newFromFab(NEW_NOTE_MENU_ITEM_TAG)
         compose.onNode(hasSetTextAction()).performTextInput("Meeting")
         compose.onNodeWithText("OK").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag(EDITOR_FIELD_TAG))
@@ -95,7 +142,7 @@ class MarkNotesFlowTest {
 
     @Test
     fun editNoteTogglePreviewAndAutosave() {
-        compose.onNodeWithTag(NEW_NOTE_FAB_TAG).performClick()
+        newFromFab(NEW_NOTE_MENU_ITEM_TAG)
         compose.onNode(hasSetTextAction()).performTextInput("Shopping")
         compose.onNodeWithText("OK").performClick()
 
@@ -119,7 +166,7 @@ class MarkNotesFlowTest {
 
     @Test
     fun enterContinuesChecklistAndToolbarFormats() {
-        compose.onNodeWithTag(NEW_NOTE_FAB_TAG).performClick()
+        newFromFab(NEW_NOTE_MENU_ITEM_TAG)
         compose.waitUntilExactlyOneExists(hasSetTextAction(), timeoutMillis = 5_000)
         compose.onNode(hasSetTextAction()).performTextInput("Todo")
         compose.onNodeWithText("OK").performClick()
@@ -161,7 +208,7 @@ class MarkNotesFlowTest {
 
     @Test
     fun createChordSequenceAddChordAndReopen() {
-        compose.onNodeWithContentDescription("New chord sequence").performClick()
+        newFromFab(NEW_CHORDS_MENU_ITEM_TAG)
         compose.onNode(hasSetTextAction()).performTextInput("Song")
         compose.onNodeWithText("OK").performClick()
 

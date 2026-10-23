@@ -32,7 +32,8 @@ Simple Android markdown notes app with folders and sync to Proton Drive (unoffic
   images and images inside `.docx` files are stored as attachments; web images stay links. Conversion runs on
   the device.
 - **Chord sequences** (guitar and bass, ported from [ChordBuilder](https://github.com/MaxDac/ChordBuilder)): the
-  browser's **New chord sequence** action creates a note with `type: chords` in its front-matter, shown with a
+  browser's **New chord sequence** action (in the floating **New** menu, next to **New note**, and on the
+  empty-folder screen) creates a note with `type: chords` in its front-matter, shown with a
   music icon. It opens in a chord editor instead of the markdown editor: an ordered list of chords with small
   diagrams (add, edit, duplicate, move, delete) and a builder with a horizontally scrollable fretboard (guitar
   frets 1–24; bass frets 9–24 with a red line after the 12th), finger selection, tags and a note. Each chord
