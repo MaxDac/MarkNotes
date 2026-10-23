@@ -70,16 +70,23 @@ class LocalNoteStore(val root: File) {
 
     fun readBytes(path: String): ByteArray = file(path).readBytes()
 
+    /** Modification time of [path] in epoch milliseconds, or 0 when it doesn't exist. */
+    fun modifiedMillis(path: String): Long = file(path).lastModified()
+
     fun write(path: String, content: String) = writeBytes(path, content.toByteArray(Charsets.UTF_8))
 
-    /** Writes atomically (temp file + move), creating parent folders as needed. */
-    fun writeBytes(path: String, bytes: ByteArray) {
+    /**
+     * Writes atomically (temp file + move), creating parent folders as needed. A non-null [modifiedMillis] becomes
+     * the file's modification time (used for downloads, which keep the edit time of the drive's version).
+     */
+    fun writeBytes(path: String, bytes: ByteArray, modifiedMillis: Long? = null) {
         val target = file(path)
         require(target != root) { "Cannot write to the root folder" }
         val parent = target.parentFile ?: throw IOException("Invalid path: $path")
         if (!parent.isDirectory && !parent.mkdirs()) throw IOException("Cannot create folder for $path")
         val temp = File(parent, ".${target.name}.tmp")
         temp.writeBytes(bytes)
+        if (modifiedMillis != null && modifiedMillis > 0) temp.setLastModified(modifiedMillis)
         try {
             Files.move(
                 temp.toPath(),

@@ -2,6 +2,7 @@ package io.github.maxdac.marknotes.proton
 
 import io.github.maxdac.marknotes.core.notes.Attachments
 import io.github.maxdac.marknotes.core.notes.NotePaths
+import io.github.maxdac.marknotes.core.sync.RemoteChangedException
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStore
 import io.github.maxdac.marknotes.core.sync.RemoteEntry
 import java.io.ByteArrayInputStream
@@ -28,7 +29,9 @@ import me.proton.drive.sdk.entity.ScopeId
  * [RemoteDriveStore] backed by the Proton Drive SDK, scoped to a folder in "My files".
  *
  * The tree is traversed once, then kept up to date through the Drive event stream: later snapshots
- * only re-traverse when events report changes inside the synced folder or continuity is lost.
+ * only re-traverse when events report changes inside the synced folder or continuity is lost. Files carry
+ * the local edit time as their claimed modification time; the sync manifest lives in the hidden
+ * `.marknotes` folder (see [ProtonManifest]).
  */
 class ProtonDriveStore(
     private val client: ProtonDriveClient,
@@ -62,52 +65,71 @@ class ProtonDriveStore(
         return entries.values.toList()
     }
 
-    override suspend fun download(entry: RemoteEntry): ByteArray {
+    override suspend fun download(entry: RemoteEntry): ByteArray = downloadRevision(entry.version)
+
+    override suspend fun uploadNew(path: String, bytes: ByteArray, modifiedMillis: Long): RemoteEntry {
+        val parent = ensureFolder(NotePaths.parent(path))
+        val modified = modificationTime(modifiedMillis)
+        val result = uploadFile(parent, NotePaths.name(path), Attachments.mimeFor(path) ?: MEDIA_TYPE, bytes, modified)
+        return RemoteEntry(path, result.nodeUid.value, false, result.revisionUid.value, modified.toEpochMilli())
+            .also { entries[path] = it }
+    }
+
+    override suspend fun uploadRevision(entry: RemoteEntry, bytes: ByteArray, modifiedMillis: Long): RemoteEntry {
+        val modified = modificationTime(modifiedMillis)
+        val result = uploadNextRevision(RevisionUid(entry.version), bytes, modified)
+        return entry.copy(version = result.revisionUid.value, modifiedMillis = modified.toEpochMilli())
+            .also { entries[entry.path] = it }
+    }
+
+    private fun modificationTime(modifiedMillis: Long): Instant =
+        if (modifiedMillis > 0L) Instant.ofEpochMilli(modifiedMillis) else Instant.now()
+
+    private suspend fun uploadFile(
+        parent: NodeUid,
+        name: String,
+        mediaType: String,
+        bytes: ByteArray,
+        modified: Instant
+    ) =
+        client.uploader(
+            FileUploaderRequest(
+                parentFolderUid = parent,
+                name = name,
+                mediaType = mediaType,
+                fileSize = bytes.size.toLong(),
+                lastModificationTime = modified,
+                overrideExistingDraftByOtherClient = false
+            )
+        ).use { uploader ->
+            coroutineScope {
+                uploader.uploadFromStream(this, Channels.newChannel(ByteArrayInputStream(bytes)))
+                    .use { it.awaitCompletion() }
+            }
+        }
+
+    private suspend fun uploadNextRevision(current: RevisionUid, bytes: ByteArray, modified: Instant) =
+        client.uploader(
+            FileRevisionUploaderRequest(
+                currentActiveRevisionUid = current,
+                lastModificationTime = modified,
+                size = bytes.size.toLong()
+            )
+        ).use { uploader ->
+            coroutineScope {
+                uploader.uploadFromStream(this, Channels.newChannel(ByteArrayInputStream(bytes)))
+                    .use { it.awaitCompletion() }
+            }
+        }
+
+    private suspend fun downloadRevision(revision: String): ByteArray {
         val out = ByteArrayOutputStream()
-        client.downloader(FileDownloaderRequest(RevisionUid(entry.version))).use { downloader ->
+        client.downloader(FileDownloaderRequest(RevisionUid(revision))).use { downloader ->
             coroutineScope {
                 downloader.downloadToStream(this, Channels.newChannel(out)).use { it.awaitCompletion() }
             }
         }
         return out.toByteArray()
-    }
-
-    override suspend fun uploadNew(path: String, bytes: ByteArray): RemoteEntry {
-        val parent = ensureFolder(NotePaths.parent(path))
-        val now = Instant.now()
-        val request = FileUploaderRequest(
-            parentFolderUid = parent,
-            name = NotePaths.name(path),
-            mediaType = Attachments.mimeFor(path) ?: MEDIA_TYPE,
-            fileSize = bytes.size.toLong(),
-            lastModificationTime = now,
-            overrideExistingDraftByOtherClient = false
-        )
-        val result = client.uploader(request).use { uploader ->
-            coroutineScope {
-                uploader.uploadFromStream(this, Channels.newChannel(ByteArrayInputStream(bytes)))
-                    .use { it.awaitCompletion() }
-            }
-        }
-        return RemoteEntry(path, result.nodeUid.value, false, result.revisionUid.value, now.toEpochMilli())
-            .also { entries[path] = it }
-    }
-
-    override suspend fun uploadRevision(entry: RemoteEntry, bytes: ByteArray): RemoteEntry {
-        val now = Instant.now()
-        val request = FileRevisionUploaderRequest(
-            currentActiveRevisionUid = RevisionUid(entry.version),
-            lastModificationTime = now,
-            size = bytes.size.toLong()
-        )
-        val result = client.uploader(request).use { uploader ->
-            coroutineScope {
-                uploader.uploadFromStream(this, Channels.newChannel(ByteArrayInputStream(bytes)))
-                    .use { it.awaitCompletion() }
-            }
-        }
-        return entry.copy(version = result.revisionUid.value, modifiedMillis = now.toEpochMilli())
-            .also { entries[entry.path] = it }
     }
 
     override suspend fun createFolder(path: String): RemoteEntry {
@@ -116,12 +138,53 @@ class ProtonDriveStore(
     }
 
     override suspend fun delete(entry: RemoteEntry) {
+        if (!entry.isFolder) {
+            // Trash only the revision this device saw: a newer one means another device changed the file.
+            val current = client.enumerateNodes(listOf(NodeUid(entry.id))).toList()
+                .filterIsInstance<FileNode>().firstOrNull { it.trashTime == null }
+                ?: return forget(entry)
+            if (current.activeRevision.uid.value != entry.version) throw RemoteChangedException(entry.path)
+        }
         val results = client.trashNodes(listOf(NodeUid(entry.id))).toList()
         results.filterIsInstance<NodeResultPair.Failure>().firstOrNull()?.let {
             throw IOException("Could not trash ${entry.path}: ${it.error.message}", it.error)
         }
+        forget(entry)
+    }
+
+    private fun forget(entry: RemoteEntry) {
         entries.keys.removeAll { it == entry.path || NotePaths.isAncestor(entry.path, it) }
     }
+
+    override suspend fun readManifest(): ByteArray? = manifest.read(ensureRoot().value)
+
+    override suspend fun writeManifest(bytes: ByteArray) = manifest.write(ensureRoot().value, bytes)
+
+    private val manifest = ProtonManifest(
+        object : ManifestDrive {
+            override suspend fun child(parent: String, name: String): ManifestNode? =
+                children(NodeUid(parent)).firstOrNull { it.trashTime == null && it.name.getOrNull() == name }?.let {
+                    when (it) {
+                        is FolderNode -> ManifestNode(it.uid.value, isFolder = true)
+                        is FileNode -> ManifestNode(it.uid.value, isFolder = false, it.activeRevision.uid.value)
+                        else -> null
+                    }
+                }
+
+            override suspend fun download(revision: String): ByteArray = downloadRevision(revision)
+
+            override suspend fun createFolder(parent: String, name: String): ManifestNode =
+                ManifestNode(client.createFolder(NodeUid(parent), name).uid.value, isFolder = true)
+
+            override suspend fun uploadNew(parent: String, name: String, bytes: ByteArray) {
+                uploadFile(NodeUid(parent), name, MANIFEST_MEDIA_TYPE, bytes, Instant.now())
+            }
+
+            override suspend fun uploadRevision(file: ManifestNode, bytes: ByteArray) {
+                uploadNextRevision(RevisionUid(file.revision), bytes, Instant.now())
+            }
+        }
+    )
 
     private suspend fun ensureRoot(): NodeUid {
         rootUid?.let { return it }
@@ -150,8 +213,12 @@ class ProtonDriveStore(
     }
 
     private suspend fun scan(folder: NodeUid, path: String) {
-        for (node in children(folder)) {
-            val name = node.name.getOrNull()?.takeIf { node.trashTime == null } ?: continue
+        val visible = children(folder).filter { it.trashTime == null }
+        for (node in visible) {
+            // A name that can't be decrypted would look like a deletion: fail the snapshot instead.
+            val name = decryptedName(node.name, path)
+            // The hidden .marknotes folder holds the manifest and is never synced.
+            if (path.isEmpty() && name.startsWith(".")) continue
             val childPath = NotePaths.join(path, name)
             when (node) {
                 is FolderNode -> {
@@ -204,5 +271,10 @@ class ProtonDriveStore(
 
     private companion object {
         const val MEDIA_TYPE = "text/markdown"
+        const val MANIFEST_MEDIA_TYPE = "application/json"
     }
 }
+
+/** The decrypted name of an entry in [folder]; a name that can't be decrypted fails the snapshot. */
+internal fun decryptedName(name: Result<String>, folder: String): String =
+    name.getOrElse { throw IOException("Could not decrypt the name of an entry in /$folder", it) }

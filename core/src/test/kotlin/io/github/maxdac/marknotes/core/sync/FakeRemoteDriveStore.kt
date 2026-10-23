@@ -14,6 +14,18 @@ class FakeRemoteDriveStore : RemoteDriveStore {
     /** Paths whose [uploadNew] fails. */
     val failingUploads = mutableSetOf<String>()
 
+    /** Paths whose [uploadRevision] fails. */
+    val failingRevisions = mutableSetOf<String>()
+
+    /** Runs once after the next [snapshot] is taken, e.g. to simulate another device or an editor save. */
+    var afterSnapshot: (() -> Unit)? = null
+
+    /** Runs before every [download], e.g. to simulate an editor save racing the sync. */
+    var beforeDownload: ((RemoteEntry) -> Unit)? = null
+
+    /** Bytes served instead of the stored ones by [download], keyed by path. */
+    val corruptDownloads = mutableMapOf<String, ByteArray>()
+
     private fun nextId() = "id-${++counter}"
     private fun nextVersion() = "v-${++counter}"
 
@@ -50,27 +62,36 @@ class FakeRemoteDriveStore : RemoteDriveStore {
         missing.reversed().forEach { items[it] = Item(RemoteEntry(it, nextId(), true, "", 0L), ByteArray(0)) }
     }
 
-    override suspend fun snapshot(): List<RemoteEntry> = items.values.map { it.entry }
+    fun entry(path: String): RemoteEntry? = items[path]?.entry
+
+    override suspend fun snapshot(): List<RemoteEntry> {
+        val entries = items.values.map { it.entry }
+        afterSnapshot?.also { afterSnapshot = null }?.invoke()
+        return entries
+    }
 
     override suspend fun download(entry: RemoteEntry): ByteArray {
         calls += "download:${entry.path}"
+        beforeDownload?.invoke(entry)
+        corruptDownloads[entry.path]?.let { return it }
         return items[entry.path]?.bytes ?: error("Not found: ${entry.path}")
     }
 
-    override suspend fun uploadNew(path: String, bytes: ByteArray): RemoteEntry {
+    override suspend fun uploadNew(path: String, bytes: ByteArray, modifiedMillis: Long): RemoteEntry {
         calls += "uploadNew:$path"
         if (path in failingUploads) error("upload refused")
         check(path !in items) { "Already exists: $path" }
         ensureParents(path)
-        val entry = RemoteEntry(path, nextId(), false, nextVersion(), 0L)
+        val entry = RemoteEntry(path, nextId(), false, nextVersion(), modifiedMillis)
         items[path] = Item(entry, bytes)
         return entry
     }
 
-    override suspend fun uploadRevision(entry: RemoteEntry, bytes: ByteArray): RemoteEntry {
+    override suspend fun uploadRevision(entry: RemoteEntry, bytes: ByteArray, modifiedMillis: Long): RemoteEntry {
         calls += "uploadRevision:${entry.path}"
+        if (entry.path in failingRevisions) error("upload refused")
         val current = items[entry.path] ?: error("Not found: ${entry.path}")
-        val updated = current.entry.copy(version = nextVersion())
+        val updated = current.entry.copy(version = nextVersion(), modifiedMillis = modifiedMillis)
         items[entry.path] = Item(updated, bytes)
         return updated
     }
@@ -83,6 +104,8 @@ class FakeRemoteDriveStore : RemoteDriveStore {
 
     override suspend fun delete(entry: RemoteEntry) {
         calls += "delete:${entry.path}"
+        val current = items[entry.path]?.entry ?: return
+        if (!entry.isFolder && current.version != entry.version) throw RemoteChangedException(entry.path)
         remove(entry.path)
     }
 

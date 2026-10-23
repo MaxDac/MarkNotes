@@ -8,6 +8,7 @@ import io.github.maxdac.marknotes.core.sync.DriveAccount
 import io.github.maxdac.marknotes.core.sync.DriveProvider
 import io.github.maxdac.marknotes.core.sync.DriveSyncTarget
 import io.github.maxdac.marknotes.core.sync.FileBaseContentStore
+import io.github.maxdac.marknotes.core.sync.FileConflictStore
 import io.github.maxdac.marknotes.core.sync.MultiDriveSync
 import io.github.maxdac.marknotes.core.sync.SyncConflict
 import io.github.maxdac.marknotes.data.AppSettings
@@ -23,6 +24,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -48,7 +52,8 @@ data class SyncState(
 
 /**
  * Keeps the local notes in sync with every connected drive. Sync is only triggered on app launch and on
- * demand: no background or periodic polling.
+ * demand: no background or periodic polling. Editors' pending saves are written first ([beforeSync]), and the
+ * conflicts waiting for the merge-back UI are kept across restarts.
  */
 class SyncManager(
     private val context: Context,
@@ -59,12 +64,14 @@ class SyncManager(
     private val connectors: Map<DriveProvider, DriveConnector>,
     private val settings: AppSettings,
     private val scope: CoroutineScope,
+    private val beforeSync: suspend () -> Unit = {},
     private val onLocalChanged: () -> Unit
 ) {
     private val mutex = Mutex()
     private val multiSync = MultiDriveSync(notes, settings.deviceId)
     private val mergeBack = ConflictMergeBack(notes)
     private val migrated = CompletableDeferred<Unit>()
+    private val conflictStore = FileConflictStore(File(context.filesDir, "sync-conflicts.json"))
 
     private val _state = MutableStateFlow(SyncState(message = settings.lastSyncSummary.ifBlank { null }))
     val state: StateFlow<SyncState> = _state
@@ -72,9 +79,15 @@ class SyncManager(
     init {
         scope.launch {
             try {
+                restoreConflicts()
                 migrateLegacyProton()
             } finally {
                 migrated.complete(Unit)
+            }
+            launch {
+                state.map { it.conflicts }.distinctUntilChanged().drop(1).collect { conflicts ->
+                    withContext(Dispatchers.IO) { runCatching { conflictStore.save(conflicts) } }
+                }
             }
             accounts.observe().collect { entities ->
                 val drives = entities.mapNotNull { entity ->
@@ -172,7 +185,23 @@ class SyncManager(
         }
     }
 
-    private suspend fun runSync(): Unit = mutex.withLock {
+    /** Conflicts from before a restart whose copy is still there. */
+    private suspend fun restoreConflicts() {
+        val saved = withContext(Dispatchers.IO) {
+            runCatching { conflictStore.load().filter { mergeBack.isPending(it) } }.getOrDefault(emptyList())
+        }
+        if (saved.isNotEmpty()) {
+            _state.update { s -> s.copy(conflicts = (saved + s.conflicts).distinctBy { it.copyPath }) }
+        }
+    }
+
+    private suspend fun runSync() {
+        migrated.await()
+        syncLocked()
+    }
+
+    private suspend fun syncLocked(): Unit = mutex.withLock {
+        beforeSync()
         val drives = accounts.all().mapNotNull { it.toAccount() }
         if (drives.isEmpty()) {
             _state.update { it.copy(message = "Add a drive in Settings to sync", conflicts = emptyList()) }
