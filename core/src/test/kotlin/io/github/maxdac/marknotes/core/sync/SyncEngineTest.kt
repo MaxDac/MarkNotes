@@ -1,15 +1,24 @@
 package io.github.maxdac.marknotes.core.sync
 
 import io.github.maxdac.marknotes.core.notes.LocalNoteStore
+import io.github.maxdac.marknotes.core.notes.NoteIds
+import io.github.maxdac.marknotes.sync.ConflictChoice
+import io.github.maxdac.marknotes.sync.Side
+import io.github.maxdac.marknotes.sync.mergeText
+import io.github.maxdac.marknotes.sync.parseManifest
+import io.github.maxdac.marknotes.sync.readId
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+
+private fun hex(c: Char) = c.toString().repeat(64)
 
 class SyncEngineTest {
     private lateinit var dir: File
@@ -91,14 +100,17 @@ class SyncEngineTest {
 
     @Test
     fun attachmentsAreUploadedAndListedInTheManifest() = runTest {
-        local.writeBytes("attachments/aa.png", byteArrayOf(1, 2, 3))
+        local.writeBytes("attachments/${hex('a')}.png", byteArrayOf(1, 2, 3))
 
         val result = syncClean()
 
         assertEquals(1, result.uploaded)
-        assertTrue(remote.exists("attachments/aa.png"))
-        val manifest = SyncManifest.parse(remote.manifest!!.toString(Charsets.UTF_8))!!
-        assertEquals(Hashing.sha256Hex(byteArrayOf(1, 2, 3)), manifest.files.getValue("attachments/aa.png").sha256)
+        assertTrue(remote.exists("attachments/${hex('a')}.png"))
+        val manifest = parseManifest(remote.manifest!!.toString(Charsets.UTF_8))!!
+        assertEquals(
+            Hashing.sha256Hex(byteArrayOf(1, 2, 3)),
+            manifest.files.getValue("attachments/${hex('a')}.png").sha256
+        )
         assertStable()
     }
 
@@ -106,20 +118,20 @@ class SyncEngineTest {
     fun attachmentsAreDownloadedWithoutBaseCopies() = runTest {
         val base = InMemoryBaseContentStore()
         engine = SyncEngine(local, remote, metadata, base) { 1000L }
-        remote.putFile("attachments/bb.jpg", "jpeg")
+        remote.putFile("attachments/${hex('b')}.jpg", "jpeg")
 
         val result = syncClean()
 
         assertEquals(1, result.downloaded)
-        assertEquals("jpeg", local.read("attachments/bb.jpg"))
-        assertEquals(null, base.get("attachments/bb.jpg"))
+        assertEquals("jpeg", local.read("attachments/${hex('b')}.jpg"))
+        assertEquals(null, base.get("attachments/${hex('b')}.jpg"))
         assertStable()
     }
 
     @Test
     fun attachmentsOnBothSidesAreNeverConflicts() = runTest {
-        local.write("attachments/cc.png", "local bytes")
-        remote.putFile("attachments/cc.png", "remote bytes")
+        local.write("attachments/${hex('c')}.png", "local bytes")
+        remote.putFile("attachments/${hex('c')}.png", "remote bytes")
 
         val result = syncClean()
 
@@ -130,18 +142,18 @@ class SyncEngineTest {
 
     @Test
     fun attachmentDeletionsPropagate() = runTest {
-        local.write("attachments/dd.png", "d")
-        remote.putFile("attachments/ee.gif", "e")
+        local.write("attachments/${hex('d')}.png", "d")
+        remote.putFile("attachments/${hex('e')}.gif", "e")
         syncClean()
 
-        local.delete("attachments/dd.png")
-        remote.remove("attachments/ee.gif")
+        local.delete("attachments/${hex('d')}.png")
+        remote.remove("attachments/${hex('e')}.gif")
         val result = syncClean()
 
         assertEquals(1, result.deletedRemote)
         assertEquals(1, result.deletedLocal)
-        assertFalse(remote.exists("attachments/dd.png"))
-        assertFalse(local.exists("attachments/ee.gif"))
+        assertFalse(remote.exists("attachments/${hex('d')}.png"))
+        assertFalse(local.exists("attachments/${hex('e')}.gif"))
         assertStable()
     }
 
@@ -157,17 +169,21 @@ class SyncEngineTest {
     }
 
     @Test
-    fun differentContentWithoutHistoryIsAConflict() = runTest {
+    fun differentContentWithoutHistoryKeepsTheNewestAndSavesACopy() = runTest {
         local.write("n.md", "local")
         remote.putFile("n.md", "remote")
 
         val result = syncClean()
 
-        assertEquals(1, result.conflicts.size)
-        assertEquals("local", result.conflicts[0].localText)
-        assertEquals("remote", result.conflicts[0].remoteText)
+        val conflict = result.conflicts.single()
+        assertEquals("n (conflicted copy).md", conflict.copyPath)
+        assertEquals(Side.LOCAL, conflict.winner)
+        assertEquals(null, conflict.baseText)
         assertEquals("local", local.read("n.md"))
-        assertEquals("remote", remote.content("n.md"))
+        assertEquals("local", remote.content("n.md"))
+        assertEquals("remote", local.read(conflict.copyPath))
+        assertEquals("remote", remote.content(conflict.copyPath))
+        assertStable()
     }
 
     @Test
@@ -199,50 +215,99 @@ class SyncEngineTest {
     }
 
     @Test
-    fun editsOnBothSidesProduceConflictAndKeepLocalResolves() = runTest {
-        local.write("n.md", "base")
-        syncClean()
-        local.write("n.md", "local")
-        remote.putFile("n.md", "remote")
-
-        val conflict = syncClean().conflicts.single()
-        engine.resolve(conflict, ConflictResolution.KeepLocal)
-
-        assertEquals("local", local.read("n.md"))
-        assertEquals("local", remote.content("n.md"))
-        assertStable()
-    }
-
-    @Test
-    fun keepRemoteResolution() = runTest {
-        local.write("n.md", "base")
-        syncClean()
-        local.write("n.md", "local")
-        remote.putFile("n.md", "remote")
-
-        val conflict = syncClean().conflicts.single()
-        engine.resolve(conflict, ConflictResolution.KeepRemote)
-
-        assertEquals("remote", local.read("n.md"))
-        assertEquals("remote", remote.content("n.md"))
-        assertStable()
-    }
-
-    @Test
-    fun keepBothResolutionDuplicatesRemoteVersion() = runTest {
+    fun overlappingEditsKeepTheNewerLocalVersion() = runTest {
         local.write("dir/n.md", "base")
         syncClean()
         local.write("dir/n.md", "local")
-        remote.putFile("dir/n.md", "remote")
+        remote.putFile("dir/n.md", "remote", modifiedMillis = 1L)
+
+        val result = syncClean()
+
+        val conflict = result.conflicts.single()
+        assertEquals(Side.LOCAL, conflict.winner)
+        assertEquals("base", conflict.baseText)
+        assertEquals("local", local.read("dir/n.md"))
+        assertEquals("local", remote.content("dir/n.md"))
+        assertEquals("remote", local.read("dir/n (conflicted copy).md"))
+        assertEquals("remote", remote.content("dir/n (conflicted copy).md"))
+        assertTrue(result.localChanges > 0)
+        assertStable()
+    }
+
+    @Test
+    fun overlappingEditsKeepTheNewerRemoteVersionAndTiesGoToTheDrive() = runTest {
+        local.write("n.md", "base")
+        syncClean()
+        local.write("n.md", "local")
+        local.file("n.md").setLastModified(5_000L)
+        remote.putFile("n.md", "remote", modifiedMillis = 5_000L)
 
         val conflict = syncClean().conflicts.single()
-        engine.resolve(conflict, ConflictResolution.KeepBoth)
 
-        val copy = "dir/n${SyncEngine.CONFLICT_SUFFIX}.md"
-        assertEquals("local", local.read("dir/n.md"))
-        assertEquals("remote", local.read(copy))
-        assertEquals("local", remote.content("dir/n.md"))
-        assertEquals("remote", remote.content(copy))
+        assertEquals(Side.REMOTE, conflict.winner)
+        assertEquals("remote", local.read("n.md"))
+        assertEquals("remote", remote.content("n.md"))
+        assertEquals("local", local.read(conflict.copyPath))
+        assertEquals("local", remote.content(conflict.copyPath))
+        assertStable()
+    }
+
+    @Test
+    fun conflictedCopyGetsANewIdAndAFreeName() = runTest {
+        local.write("n.md", "---\nid: aaaaaaaa\n---\nbase\n")
+        syncClean()
+        local.write("n (conflicted copy).md", "an older copy")
+        syncClean()
+        local.write("n.md", "---\nid: aaaaaaaa\n---\nlocal\n")
+        remote.putFile("n.md", "---\nid: aaaaaaaa\n---\nremote\n")
+
+        val conflict = syncClean().conflicts.single()
+
+        assertEquals("n (conflicted copy) 2.md", conflict.copyPath)
+        assertEquals("---\nid: aaaaaaaa\n---\nlocal\n", local.read("n.md"))
+        val copy = local.read(conflict.copyPath)
+        val id = readId(copy)!!
+        assertTrue(NoteIds.isValid(id))
+        assertNotEquals("aaaaaaaa", id)
+        assertEquals("---\nid: $id\n---\nremote\n", copy)
+        assertStable()
+    }
+
+    @Test
+    fun conflictedCopyCanBeMergedBack() = runTest {
+        local.write("n.md", "---\nid: aaaaaaaa\n---\na\nb\n")
+        syncClean()
+        local.write("n.md", "---\nid: aaaaaaaa\n---\na\nlocal\n")
+        remote.putFile("n.md", "---\nid: aaaaaaaa\n---\na\nremote\n", modifiedMillis = 1L)
+        val conflict = syncClean().conflicts.single()
+        val mergeBack = ConflictMergeBack(local)
+        assertTrue(mergeBack.isPending(conflict))
+
+        val merge = mergeBack.merge(conflict)
+        assertEquals(1, merge.conflicts)
+        mergeBack.apply(conflict, mergeText(merge.chunks, mapOf(0 to ConflictChoice.BOTH)))
+
+        assertFalse(mergeBack.isPending(conflict))
+        val result = syncClean()
+        assertEquals(1, result.uploaded)
+        assertEquals(1, result.deletedRemote)
+        assertEquals("---\nid: aaaaaaaa\n---\na\nlocal\nremote\n", remote.content("n.md"))
+        assertFalse(remote.exists(conflict.copyPath))
+        assertStable()
+    }
+
+    @Test
+    fun discardingAConflictedCopyDeletesItEverywhere() = runTest {
+        local.write("n.md", "local")
+        remote.putFile("n.md", "remote")
+        val conflict = syncClean().conflicts.single()
+
+        ConflictMergeBack(local).discardCopy(conflict)
+        syncClean()
+
+        assertFalse(local.exists(conflict.copyPath))
+        assertFalse(remote.exists(conflict.copyPath))
+        assertEquals("local", remote.content("n.md"))
         assertStable()
     }
 
@@ -345,14 +410,18 @@ class SyncEngineTest {
     }
 
     @Test
-    fun conflictIsReportedAgainUntilResolved() = runTest {
-        local.write("n.md", "base")
-        syncClean()
-        local.write("n.md", "local")
-        remote.putFile("n.md", "remote")
+    fun aFailedStepIsReportedAndTheSyncGoesOn() = runTest {
+        local.write("a.md", "a")
+        local.write("b.md", "b")
+        remote.failingUploads += "a.md"
 
-        assertEquals(1, syncClean().conflicts.size)
-        assertEquals(1, syncClean().conflicts.size)
+        val result = engine.sync()
+
+        assertEquals(listOf("a.md: upload refused"), result.errors)
+        assertEquals("b", remote.content("b.md"))
+        remote.failingUploads.clear()
+        syncClean()
+        assertEquals("a", remote.content("a.md"))
     }
 
     @Test
@@ -372,29 +441,11 @@ class SyncEngineTest {
     }
 
     @Test
-    fun conflictCarriesBaseAndMergedResolutionIsSavedOnBothSides() = runTest {
-        local.write("n.md", "a\nb\n")
-        syncClean()
-        local.write("n.md", "a\nlocal\n")
-        remote.putFile("n.md", "a\nremote\n")
-
-        val conflict = syncClean().conflicts.single()
-        assertEquals("a\nb\n", conflict.baseText)
-        assertEquals(1, conflict.merge.conflicts.size)
-
-        engine.resolve(conflict, ConflictResolution.Merged("a\nlocal and remote\n"))
-
-        assertEquals("a\nlocal and remote\n", local.read("n.md"))
-        assertEquals("a\nlocal and remote\n", remote.content("n.md"))
-        assertStable()
-    }
-
-    @Test
     fun manifestDescribesSyncedNotesAndIsOnlyRewrittenOnChange() = runTest {
         local.write("a/n.md", "x")
         syncClean()
 
-        val manifest = SyncManifest.parse(remote.manifest!!.toString(Charsets.UTF_8))!!
+        val manifest = parseManifest(remote.manifest!!.toString(Charsets.UTF_8))!!
         assertEquals(setOf("a/n.md"), manifest.files.keys)
         assertEquals(Hashing.sha256Hex("x".toByteArray()), manifest.files.getValue("a/n.md").sha256)
         assertEquals(1, remote.manifestWrites)

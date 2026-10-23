@@ -17,6 +17,9 @@ markwon = "4.6.2"
 prism4j = "2.0.0"
 dropbox = "8.0.2"
 msal = "8.5.0"
+# Shared sync core (https://github.com/MaxDac/marknotes-sync); the Kotlin bindings need JNA.
+marknotesSync = "0.1.0-rc.1"
+jna = "5.17.0"
 junit = "4.13.2"
 androidxTestExtJunit = "1.3.0"
 androidxTestRunner = "1.7.0"
@@ -69,6 +72,10 @@ prism4j = { group = "io.noties", name = "prism4j", version.ref = "prism4j" }
 prism4j-bundler = { group = "io.noties", name = "prism4j-bundler", version.ref = "prism4j" }
 dropbox-android = { group = "com.dropbox.core", name = "dropbox-android-sdk", version.ref = "dropbox" }
 msal = { group = "com.microsoft.identity.client", name = "msal", version.ref = "msal" }
+marknotes-sync-kotlin = { group = "io.github.maxdac.marknotes", name = "marknotes-sync-kotlin", version.ref = "marknotesSync" }
+marknotes-sync-natives = { group = "io.github.maxdac.marknotes", name = "marknotes-sync-natives", version.ref = "marknotesSync" }
+marknotes-sync-android = { group = "io.github.maxdac.marknotes", name = "marknotes-sync-android", version.ref = "marknotesSync" }
+jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
