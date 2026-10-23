@@ -1,104 +1,20 @@
+# Pro-only dependencies, exposed as the `pro` catalog (see settings.gradle.kts). Everything shared with the
+# libre app (AndroidX, Compose, Dropbox, marknotes-sync, build plugins, ...) comes from the `libs` catalog in
+# libre/gradle/libs.versions.toml (MaxDac/marknotes-android), so it is versioned in one place.
 [versions]
-agp = "9.4.1"
-kotlin = "2.4.21"
-ksp = "2.3.12"
-coreKtx = "1.19.1"
-activityCompose = "1.13.0"
-composeBom = "2026.09.00"
-materialIcons = "1.7.8"
-lifecycle = "2.11.0"
-navigation = "2.10.2"
-room = "2.8.5"
 okhttp = "5.5.0"
-serializationJson = "1.11.0"
-coroutines = "1.11.0"
 bcrypt = "0.10.2"
-markwon = "4.6.2"
-# Import of shared content: HTML parsing (:core) and PDF text extraction (:app).
-jsoup = "1.23.2"
-pdfboxAndroid = "2.0.27.0"
-prism4j = "2.0.0"
-dropbox = "8.0.2"
 msal = "8.5.0"
-# Shared sync core (https://github.com/MaxDac/marknotes-sync); the Kotlin bindings need JNA.
-marknotesSync = "0.1.0"
-jna = "5.17.0"
-junit = "4.13.2"
-androidxTestExtJunit = "1.3.0"
-androidxTestRunner = "1.7.0"
-espresso = "3.7.0"
-ktlintPlugin = "14.2.0"
-ktlint = "1.8.0"
-detekt = "1.23.8"
-# Only on the build classpath (AGP and plugins pull it in); pinned above their transitive version for security fixes.
-bouncycastle = "1.86"
-# Dropbox SDK's transitive jackson-core 2.15 has GHSA-r7wm-3cxj-wff9 and GHSA-7hhh-6rmp-j9qf.
-jackson = "2.22.4"
-# Vulnerable transitive build-tool dependencies (AGP's bundletool/jetifier, prism4j-bundler), not shipped.
-commons-io = "2.22.0"
-jose4j = "0.9.7"
-jdom2 = "2.0.6.1"
 # Proton Drive SDK (Kotlin bindings over the C# SDK). Only used by :proton-drive.
 protonDriveSdk = "0.31.1"
 # Proton core libraries the SDK is built against (network stack for its ApiProvider, OpenPGP for address keys).
 protonCore = "36.8.0"
 
 [libraries]
-androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
-androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
-androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
-androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
-androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
-androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
-androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
-androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "materialIcons" }
-androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
-androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
-androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
-androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
-androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
-androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
-kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
-kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
-kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
-kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 bcrypt = { group = "at.favre.lib", name = "bcrypt", version.ref = "bcrypt" }
-markwon-core = { group = "io.noties.markwon", name = "core", version.ref = "markwon" }
-markwon-strikethrough = { group = "io.noties.markwon", name = "ext-strikethrough", version.ref = "markwon" }
-markwon-tables = { group = "io.noties.markwon", name = "ext-tables", version.ref = "markwon" }
-markwon-tasklist = { group = "io.noties.markwon", name = "ext-tasklist", version.ref = "markwon" }
-markwon-image = { group = "io.noties.markwon", name = "image", version.ref = "markwon" }
-markwon-syntax-highlight = { group = "io.noties.markwon", name = "syntax-highlight", version.ref = "markwon" }
-jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
-pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfboxAndroid" }
-prism4j = { group = "io.noties", name = "prism4j", version.ref = "prism4j" }
-prism4j-bundler = { group = "io.noties", name = "prism4j-bundler", version.ref = "prism4j" }
-dropbox-android = { group = "com.dropbox.core", name = "dropbox-android-sdk", version.ref = "dropbox" }
 msal = { group = "com.microsoft.identity.client", name = "msal", version.ref = "msal" }
-marknotes-sync-kotlin = { group = "io.github.maxdac.marknotes", name = "marknotes-sync-kotlin", version.ref = "marknotesSync" }
-marknotes-sync-natives = { group = "io.github.maxdac.marknotes", name = "marknotes-sync-natives", version.ref = "marknotesSync" }
-marknotes-sync-android = { group = "io.github.maxdac.marknotes", name = "marknotes-sync-android", version.ref = "marknotesSync" }
-jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
-junit = { group = "junit", name = "junit", version.ref = "junit" }
-androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
-androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
-androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
-androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
-androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
-bouncycastle-bcprov = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
-bouncycastle-bcpkix = { group = "org.bouncycastle", name = "bcpkix-jdk18on", version.ref = "bouncycastle" }
-bouncycastle-bcutil = { group = "org.bouncycastle", name = "bcutil-jdk18on", version.ref = "bouncycastle" }
-# pdfbox-android's transitive Bouncy Castle (1.72) has known vulnerabilities.
-bouncycastle-bcprov-jdk15to18 = { group = "org.bouncycastle", name = "bcprov-jdk15to18", version.ref = "bouncycastle" }
-bouncycastle-bcpkix-jdk15to18 = { group = "org.bouncycastle", name = "bcpkix-jdk15to18", version.ref = "bouncycastle" }
-bouncycastle-bcutil-jdk15to18 = { group = "org.bouncycastle", name = "bcutil-jdk15to18", version.ref = "bouncycastle" }
-jackson-core = { group = "com.fasterxml.jackson.core", name = "jackson-core", version.ref = "jackson" }
-commons-io = { group = "commons-io", name = "commons-io", version.ref = "commons-io" }
-jose4j = { group = "org.bitbucket.b_c", name = "jose4j", version.ref = "jose4j" }
-jdom2 = { group = "org.jdom", name = "jdom2", version.ref = "jdom2" }
-kotlin-gradle-plugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
 proton-drive-sdk = { group = "me.proton.drive", name = "sdk", version.ref = "protonDriveSdk" }
 proton-core-domain = { group = "me.proton.core", name = "domain", version.ref = "protonCore" }
 proton-core-network-data = { group = "me.proton.core", name = "network-data", version.ref = "protonCore" }
@@ -106,11 +22,3 @@ proton-core-network-domain = { group = "me.proton.core", name = "network-domain"
 proton-core-crypto-android = { group = "me.proton.core", name = "crypto-android", version.ref = "protonCore" }
 proton-core-crypto-common = { group = "me.proton.core", name = "crypto-common", version.ref = "protonCore" }
 proton-core-util-kotlin = { group = "me.proton.core", name = "util-kotlin", version.ref = "protonCore" }
-
-[plugins]
-android-application = { id = "com.android.application", version.ref = "agp" }
-android-library = { id = "com.android.library", version.ref = "agp" }
-kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
-ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintPlugin" }
-detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }

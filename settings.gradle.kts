@@ -22,10 +22,23 @@ dependencyResolutionManagement {
             content { includeGroup("io.github.maxdac.marknotes") }
         }
     }
+    // gradle/libs.versions.toml only holds the Pro-only dependencies (`pro`); `libs` is the libre app's catalog, so
+    // the code shared with marknotes-android builds against the same versions in both repositories.
+    defaultLibrariesExtensionName = "pro"
+    versionCatalogs {
+        create("libs") { from(files("libre/gradle/libs.versions.toml")) }
+    }
 }
 
 rootProject.name = "MarkNotes"
 
+// Shared with the F-Droid app: the libre/ submodule is MaxDac/marknotes-android.
 include(":core")
-include(":app")
+include(":app-shared")
+project(":core").projectDir = file("libre/core")
+project(":app-shared").projectDir = file("libre/app-shared")
+
+// Pro-only modules.
+include(":pro-core")
 include(":proton-drive")
+include(":app")

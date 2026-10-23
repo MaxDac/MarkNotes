@@ -14,8 +14,11 @@ import io.github.maxdac.marknotes.core.sync.RemoteDriveStore
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStoreFactory
 import io.github.maxdac.marknotes.core.sync.RemoteFolderBrowser
 import io.github.maxdac.marknotes.core.sync.RemoteUnavailableException
+import io.github.maxdac.marknotes.data.AppSettings
 import io.github.maxdac.marknotes.data.MarkNotesDatabase
 import io.github.maxdac.marknotes.proton.ProtonDriveStoreFactory
+import io.github.maxdac.marknotes.ui.login.LoginScreen
+import io.github.maxdac.marknotes.ui.login.THIRD_PARTY_DISCLAIMER
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,8 +27,8 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * Proton Drive, through the Proton Drive SDK (:proton-drive). Sign-in goes through the in-app login
- * screen: [signIn] only returns the account of the session that screen saved. A single Proton account
- * is supported.
+ * screen ([signInScreen]): [signIn] only returns the account of the session that screen saved. A single Proton
+ * account is supported.
  *
  * The SDK client lives across syncs and refreshes the tokens through this [ProtonSessionSource] when the
  * API answers 401, so the stored session stays the only copy of the tokens.
@@ -33,7 +36,7 @@ import kotlinx.coroutines.sync.withLock
 class ProtonConnector(
     context: Context,
     private val sessionStorage: SessionStorage,
-    private val authClient: ProtonAuthClient,
+    val authClient: ProtonAuthClient,
     private val factory: RemoteDriveStoreFactory = ProtonDriveStoreFactory(context)
 ) : DriveConnector, ProtonSessionSource {
     override val provider = DriveProvider.PROTON
@@ -56,6 +59,29 @@ class ProtonConnector(
 
     override val current: ProtonSession?
         get() = _session.value
+
+    override val singleAccount = true
+
+    // Proton's rules for third-party apps: the disclaimer is shown on the login screen and in Settings.
+    override val notice = THIRD_PARTY_DISCLAIMER
+
+    override val signInScreen: SignInScreen = { onDone, onBack ->
+        LoginScreen(this, onLoggedIn = onDone, onBack = onBack)
+    }
+
+    override fun needsSignInScreen() = _session.value == null
+
+    /** v1 synced a single Proton Drive folder: a saved Proton session becomes a drive account. */
+    override suspend fun legacyAccount(settings: AppSettings): DriveAccount? {
+        val session = _session.value ?: return null
+        return DriveAccount(
+            id = ACCOUNT_ID,
+            provider = provider,
+            label = session.username.ifBlank { provider.displayName },
+            remoteFolder = settings.legacyRemoteFolder,
+            createRootFolder = false
+        )
+    }
 
     fun onLoggedIn(session: ProtonSession) {
         sessionStorage.save(session)
