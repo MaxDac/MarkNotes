@@ -20,6 +20,8 @@ import org.junit.Test
 
 private fun hex(c: Char) = c.toString().repeat(64)
 
+private fun sha(text: String) = Hashing.sha256Hex(text.toByteArray())
+
 class SyncEngineTest {
     private lateinit var dir: File
     private lateinit var local: LocalNoteStore
@@ -40,6 +42,8 @@ class SyncEngineTest {
     fun tearDown() {
         dir.deleteRecursively()
     }
+
+    private suspend fun record(path: String): SyncRecord? = metadata.all().firstOrNull { it.path == path }
 
     private suspend fun syncClean(): SyncResult {
         val result = engine.sync()
@@ -118,13 +122,13 @@ class SyncEngineTest {
     fun attachmentsAreDownloadedWithoutBaseCopies() = runTest {
         val base = InMemoryBaseContentStore()
         engine = SyncEngine(local, remote, metadata, base) { 1000L }
-        remote.putFile("attachments/${hex('b')}.jpg", "jpeg")
+        remote.putFile("attachments/${sha("jpeg")}.jpg", "jpeg")
 
         val result = syncClean()
 
         assertEquals(1, result.downloaded)
-        assertEquals("jpeg", local.read("attachments/${hex('b')}.jpg"))
-        assertEquals(null, base.get("attachments/${hex('b')}.jpg"))
+        assertEquals("jpeg", local.read("attachments/${sha("jpeg")}.jpg"))
+        assertEquals(null, base.get("attachments/${sha("jpeg")}.jpg"))
         assertStable()
     }
 
@@ -143,17 +147,17 @@ class SyncEngineTest {
     @Test
     fun attachmentDeletionsPropagate() = runTest {
         local.write("attachments/${hex('d')}.png", "d")
-        remote.putFile("attachments/${hex('e')}.gif", "e")
+        remote.putFile("attachments/${sha("e")}.gif", "e")
         syncClean()
 
         local.delete("attachments/${hex('d')}.png")
-        remote.remove("attachments/${hex('e')}.gif")
+        remote.remove("attachments/${sha("e")}.gif")
         val result = syncClean()
 
         assertEquals(1, result.deletedRemote)
         assertEquals(1, result.deletedLocal)
         assertFalse(remote.exists("attachments/${hex('d')}.png"))
-        assertFalse(local.exists("attachments/${hex('e')}.gif"))
+        assertFalse(local.exists("attachments/${sha("e")}.gif"))
         assertStable()
     }
 
@@ -476,5 +480,127 @@ class SyncEngineTest {
         } finally {
             otherDir.deleteRecursively()
         }
+    }
+
+    @Test
+    fun aDownloadRacingAnEditorSaveIsSkipped() = runTest {
+        local.write("n.md", "v1")
+        syncClean()
+        remote.putFile("n.md", "v2")
+        remote.beforeDownload = { local.write("n.md", "typed") }
+
+        val result = syncClean()
+
+        assertEquals(1, result.skipped)
+        assertEquals(0, result.downloaded)
+        assertEquals("typed", local.read("n.md"))
+        assertEquals(Hashing.sha256Hex("v1".toByteArray()), record("n.md")!!.localHash)
+    }
+
+    @Test
+    fun aRemoteDeletionRacingAnEditorSaveKeepsTheNote() = runTest {
+        local.write("n.md", "v1")
+        syncClean()
+        remote.remove("n.md")
+        remote.afterSnapshot = { local.write("n.md", "typed") }
+
+        val result = syncClean()
+
+        assertEquals(1, result.skipped)
+        assertEquals(0, result.deletedLocal)
+        assertEquals("typed", local.read("n.md"))
+        syncClean()
+        assertEquals("typed", remote.content("n.md"))
+        assertStable()
+    }
+
+    @Test
+    fun aRemoteFolderDeletionKeepsANoteSavedDuringTheSync() = runTest {
+        local.write("a/x.md", "x")
+        syncClean()
+        remote.remove("a")
+        remote.afterSnapshot = { local.write("a/new.md", "new") }
+
+        val result = syncClean()
+
+        assertEquals(1, result.skipped)
+        assertEquals("new", local.read("a/new.md"))
+        syncClean()
+        assertEquals("new", remote.content("a/new.md"))
+    }
+
+    @Test
+    fun aRemoteDeleteFailsWhenTheFileChangedOnTheDriveSinceTheSnapshot() = runTest {
+        local.write("n.md", "v1")
+        syncClean()
+        local.delete("n.md")
+        remote.afterSnapshot = { remote.putFile("n.md", "other device") }
+
+        val result = engine.sync()
+
+        assertEquals(1, result.errors.size)
+        assertTrue(result.errors.single().startsWith("n.md: "))
+        assertEquals("other device", remote.content("n.md"))
+        assertTrue(record("n.md") != null)
+        syncClean()
+        assertEquals("other device", local.read("n.md"))
+        assertStable()
+    }
+
+    @Test
+    fun anAttachmentWhoseBytesDoNotMatchItsNameIsRejected() = runTest {
+        val path = "attachments/${Hashing.sha256Hex("good".toByteArray())}.png"
+        remote.putFile(path, "good")
+        remote.corruptDownloads[path] = "bad".toByteArray()
+
+        val result = engine.sync()
+
+        assertEquals(1, result.errors.size)
+        assertTrue(result.errors.single().startsWith("$path: "))
+        assertFalse(local.exists(path))
+        assertEquals(null, record(path))
+        remote.corruptDownloads.clear()
+        syncClean()
+        assertEquals("good", local.read(path))
+    }
+
+    @Test
+    fun creatingALocalFolderIsALocalChange() = runTest {
+        remote.putFolder("empty")
+
+        val result = syncClean()
+
+        assertEquals(1, result.createdLocalFolders)
+        assertEquals(1, result.localChanges)
+        assertTrue(local.isFolder("empty"))
+    }
+
+    @Test
+    fun theConflictedCopyIsSavedBeforeTheNoteIsOverwritten() = runTest {
+        local.write("n.md", "local")
+        remote.putFile("n.md", "remote")
+        remote.failingRevisions += "n.md"
+
+        val result = engine.sync()
+
+        assertEquals(listOf("n.md: upload refused"), result.errors)
+        val conflict = result.conflicts.single()
+        assertEquals("remote", local.read(conflict.copyPath))
+        assertEquals("local", local.read("n.md"))
+        assertEquals("remote", remote.content("n.md"))
+        assertFalse(remote.exists(conflict.copyPath))
+    }
+
+    @Test
+    fun uploadsCarryTheLocalEditTimeAndDownloadsKeepTheDriveOne() = runTest {
+        local.write("up.md", "up")
+        local.file("up.md").setLastModified(123_000L)
+        remote.putFile("down.md", "down", modifiedMillis = 456_000L)
+
+        syncClean()
+
+        assertEquals(123_000L, remote.entry("up.md")!!.modifiedMillis)
+        assertEquals(456_000L, local.modifiedMillis("down.md"))
+        assertStable()
     }
 }

@@ -47,6 +47,9 @@ object CoreParity {
             val doc = FrontMatter.parse(c.string("text"))
             JsonObject(mapOf("frontMatter" to JsonPrimitive(doc.header), "body" to JsonPrimitive(doc.body)))
         },
+        "front-matter/with-body" to ParityMapping.Run { c ->
+            field("text", FrontMatter.join(c.string("frontMatter"), c.string("body")))
+        },
         "note-links/link-markdown" to ParityMapping.Run { c ->
             field("markdown", NoteLinks.markdown(c.string("title"), c.string("id")))
         },

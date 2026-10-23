@@ -1,6 +1,7 @@
 package io.github.maxdac.marknotes.core.sync.onedrive
 
 import io.github.maxdac.marknotes.core.notes.NotePaths
+import io.github.maxdac.marknotes.core.sync.RemoteChangedException
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStore
 import io.github.maxdac.marknotes.core.sync.RemoteEntry
 import io.github.maxdac.marknotes.core.sync.RemoteFolder
@@ -84,6 +85,9 @@ class GraphClient(
     suspend fun postJson(url: String, body: JsonObject): JsonObject =
         json(send("POST", url, body.toString().toRequestBody(JSON_MEDIA)))
 
+    suspend fun patchJson(url: String, body: JsonObject): JsonObject =
+        json(send("PATCH", url, body.toString().toRequestBody(JSON_MEDIA)))
+
     /** Follows "@odata.nextLink" pages and returns every item of a collection. */
     suspend fun collection(url: String): List<JsonObject> {
         val items = mutableListOf<JsonObject>()
@@ -141,8 +145,9 @@ class OneDriveFolderBrowser(private val graph: GraphClient) : RemoteFolderBrowse
  * [RemoteDriveStore] over Microsoft Graph, scoped to [syncFolder] (relative to the OneDrive root).
  *
  * The folder tree is traversed once; afterwards it is kept up to date with the drive's delta feed.
- * The content tag (cTag) is used as the file version; uploads of new revisions send the eTag in
- * If-Match so a concurrent remote change is never overwritten.
+ * The content tag (cTag) is used as the file version; uploads of new revisions and file deletions send the
+ * eTag in If-Match so a concurrent remote change is never overwritten or trashed. The modification time is
+ * the note's local edit time, kept in `fileSystemInfo.lastModifiedDateTime`.
  */
 class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : RemoteDriveStore {
     private val folder = syncFolder.trim('/')
@@ -156,7 +161,9 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
     override suspend fun snapshot(): List<RemoteEntry> {
         val root = ensureRoot()
         val link = deltaLink
-        if (link == null) {
+        // Until a listing completes the cache is incomplete: drop the token so a failure starts over next time.
+        deltaLink = null
+        deltaLink = if (link == null) {
             fullTraversal(root)
         } else {
             try {
@@ -173,16 +180,36 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
     override suspend fun download(entry: RemoteEntry): ByteArray =
         graph.send("GET", graph.itemUrl(entry.id, "/content"))
 
-    override suspend fun uploadNew(path: String, bytes: ByteArray): RemoteEntry {
+    override suspend fun uploadNew(path: String, bytes: ByteArray, modifiedMillis: Long): RemoteEntry {
         val url = graph.childPathUrl(ensureRoot(), path, "/content") +
             "?@microsoft.graph.conflictBehavior=fail"
-        return remember(graph.putContent(url, bytes), path)
+        return withModifiedTime(graph.putContent(url, bytes), path, modifiedMillis)
     }
 
-    override suspend fun uploadRevision(entry: RemoteEntry, bytes: ByteArray): RemoteEntry {
-        val eTag = byId[entry.id]?.eTag
-        val headers = if (eTag.isNullOrEmpty()) emptyMap() else mapOf("If-Match" to eTag)
-        return remember(graph.putContent(graph.itemUrl(entry.id, "/content"), bytes, headers), entry.path)
+    override suspend fun uploadRevision(entry: RemoteEntry, bytes: ByteArray, modifiedMillis: Long): RemoteEntry {
+        val item = graph.putContent(graph.itemUrl(entry.id, "/content"), bytes, ifMatch(entry.id))
+        return withModifiedTime(item, entry.path, modifiedMillis)
+    }
+
+    /** Stamps the uploaded [item] with the local edit time; the upload still counts if this fails. */
+    private suspend fun withModifiedTime(item: JsonObject, path: String, modifiedMillis: Long): RemoteEntry {
+        val uploaded = remember(item, path)
+        if (modifiedMillis <= 0L) return uploaded
+        val body = buildJsonObject {
+            putJsonObject("fileSystemInfo") {
+                put("lastModifiedDateTime", Instant.ofEpochMilli(modifiedMillis).toString())
+            }
+        }
+        return try {
+            remember(graph.patchJson(graph.itemUrl(uploaded.id), body), path)
+        } catch (e: GraphException) {
+            uploaded
+        }
+    }
+
+    private fun ifMatch(id: String): Map<String, String> {
+        val eTag = byId[id]?.eTag
+        return if (eTag.isNullOrEmpty()) emptyMap() else mapOf("If-Match" to eTag)
     }
 
     override suspend fun createFolder(path: String): RemoteEntry {
@@ -200,9 +227,11 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
     }
 
     override suspend fun delete(entry: RemoteEntry) {
+        val headers = if (entry.isFolder) emptyMap() else ifMatch(entry.id)
         try {
-            graph.send("DELETE", graph.itemUrl(entry.id))
+            graph.send("DELETE", graph.itemUrl(entry.id), headers = headers)
         } catch (e: GraphException) {
+            if (e.httpStatus == HTTP_PRECONDITION_FAILED) throw RemoteChangedException(entry.path)
             if (e.httpStatus != HTTP_NOT_FOUND) throw e
         }
         removeTree(entry.id)
@@ -263,12 +292,14 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
         return parent
     }
 
-    private suspend fun fullTraversal(root: String) {
+    /** Lists the whole synced folder and returns the delta link to keep once it succeeded. */
+    private suspend fun fullTraversal(root: String): String? {
         byId.clear()
         // Take the delta token first: changes made during the traversal are replayed by the next delta.
         val latest = graph.getJson(graph.pathUrl("", "/delta") + "?token=latest")
-        deltaLink = latest.string("@odata.deltaLink")
+        val link = latest.string("@odata.deltaLink")
         traverse(root, "")
+        return link
     }
 
     private suspend fun traverse(folderId: String, path: String) {
@@ -280,8 +311,10 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
         }
     }
 
-    private suspend fun applyDelta(link: String) {
+    /** Applies the changes since [link] and returns the delta link to keep once they are all applied. */
+    private suspend fun applyDelta(link: String): String? {
         var next: String? = link
+        var newLink: String? = null
         val deferred = mutableListOf<JsonObject>()
         while (next != null) {
             val page = graph.getJson(next)
@@ -290,7 +323,7 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
                 if (!applyDeltaItem(item)) deferred += item
             }
             next = page.string("@odata.nextLink")
-            page.string("@odata.deltaLink")?.let { deltaLink = it }
+            page.string("@odata.deltaLink")?.let { newLink = it }
         }
         // Items listed before their parent folder: retry until nothing more can be placed.
         var progress = true
@@ -299,6 +332,7 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
             deferred.removeAll(placed)
             progress = placed.isNotEmpty()
         }
+        return newLink
     }
 
     /** Applies one changed item. Returns false when its parent folder is not known (yet). */
@@ -340,7 +374,9 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
             id = id,
             isFolder = isFolder,
             version = if (isFolder) "" else item.string("cTag") ?: item.string("eTag").orEmpty(),
-            modifiedMillis = parseTime(item.string("lastModifiedDateTime"))
+            modifiedMillis = parseTime(
+                item.obj("fileSystemInfo")?.string("lastModifiedDateTime") ?: item.string("lastModifiedDateTime")
+            )
         )
         byId[id] = Cached(entry, item.string("eTag").orEmpty())
         return entry
@@ -371,6 +407,7 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
     private companion object {
         const val HTTP_NOT_FOUND = 404
         const val HTTP_CONFLICT = 409
+        const val HTTP_PRECONDITION_FAILED = 412
         const val HTTP_GONE = 410
     }
 }

@@ -12,6 +12,7 @@ import io.github.maxdac.marknotes.data.AppSettings
 import io.github.maxdac.marknotes.data.MarkNotesDatabase
 import io.github.maxdac.marknotes.sync.DropboxConnector
 import io.github.maxdac.marknotes.sync.OneDriveConnector
+import io.github.maxdac.marknotes.sync.PendingSaves
 import io.github.maxdac.marknotes.sync.ProtonConnector
 import io.github.maxdac.marknotes.sync.SyncManager
 import io.github.maxdac.marknotes.ui.editor.ImageImporter
@@ -56,6 +57,9 @@ class AppContainer(context: Context) {
         _localRevision.value = _localRevision.value + 1
     }
 
+    /** Unsaved editor edits, written before every sync. */
+    val pendingSaves = PendingSaves()
+
     val syncManager = SyncManager(
         context = context.applicationContext,
         notes = notes,
@@ -69,6 +73,7 @@ class AppContainer(context: Context) {
         ),
         settings = settings,
         scope = appScope,
+        beforeSync = pendingSaves::flushAll,
         onLocalChanged = ::notifyLocalChanged
     )
 }
