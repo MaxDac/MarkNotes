@@ -25,6 +25,12 @@ Simple Android markdown notes app with folders and sync to Proton Drive (unoffic
 - **Images**: the toolbar's image button adds a photo from the gallery (photo picker) or the camera. Images are
   downscaled to at most 2048 px, stored once under `attachments/` (named by content hash), shown in the preview
   and synced to every drive. Settings → **Clean unused images** deletes images no note refers to.
+- **Import from other apps**: pick MarkNotes in Android's share sheet to turn shared text, web pages (HTML),
+  `.txt`/`.md`/`.html` files, Word documents (`.docx`), PDFs (text only) or images into a new note. The import
+  screen shows a preview and lets you set the title and folder. **Auto-format as Markdown** (on by default)
+  converts headings, lists, emphasis, links, tables and code; turn it off to keep the text as it is. Shared
+  images and images inside `.docx` files are stored as attachments; web images stay links. Conversion runs on
+  the device.
 - **Chord sequences** (guitar and bass, ported from [ChordBuilder](https://github.com/MaxDac/ChordBuilder)): the
   browser's **New chord sequence** action creates a note with `type: chords` in its front-matter, shown with a
   music icon. It opens in a chord editor instead of the markdown editor: an ordered list of chords with small
@@ -255,3 +261,6 @@ respect the GPLv3. The
 SRP implementation in `:core` was written for this project, following the public protocol as
 implemented in Proton's MIT-licensed [go-srp](https://github.com/ProtonMail/go-srp). No
 protoncore_android code was copied; it is used as a library dependency.
+
+Importing uses [jsoup](https://jsoup.org) (MIT) for HTML and
+[PdfBox-Android](https://github.com/TomRoush/PdfBox-Android) (Apache 2.0) for PDF text.

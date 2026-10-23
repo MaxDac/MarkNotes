@@ -1,5 +1,6 @@
 package io.github.maxdac.marknotes
 
+import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -23,16 +24,26 @@ import io.github.maxdac.marknotes.ui.NoteScreen
 import io.github.maxdac.marknotes.ui.browser.BrowserScreen
 import io.github.maxdac.marknotes.ui.conflicts.ConflictsScreen
 import io.github.maxdac.marknotes.ui.drives.AddDriveScreen
+import io.github.maxdac.marknotes.ui.importing.ImportScreen
+import io.github.maxdac.marknotes.ui.importing.SharedContent
 import io.github.maxdac.marknotes.ui.login.LoginScreen
 import io.github.maxdac.marknotes.ui.settings.SettingsScreen
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 class MainActivity : ComponentActivity() {
+    /** The latest content shared with the app; [shareRequests] counts new shares to open the import screen for. */
+    private val sharedContent = MutableStateFlow<SharedContent?>(null)
+    private val shareRequests = MutableStateFlow(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        sharedContent.value = SharedContent.from(intent)
         if (savedInstanceState == null) {
             // Sync once per launch; no periodic polling.
             appContainer.syncManager.syncIfConnected()
+            if (sharedContent.value != null) shareRequests.value++
         }
         val settings = appContainer.settings
         setContent {
@@ -48,8 +59,17 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
             MarkNotesTheme(mode = mode, color = color) {
-                MarkNotesNavHost()
+                MarkNotesNavHost(sharedContent, shareRequests, onFinish = ::finish)
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        SharedContent.from(intent)?.let {
+            setIntent(intent)
+            sharedContent.value = it
+            shareRequests.value++
         }
     }
 
@@ -67,13 +87,18 @@ object Routes {
     const val LOGIN = "login"
     const val CONFLICTS = "conflicts"
     const val ADD_DRIVE = "add_drive"
+    const val IMPORT = "import"
 
     fun browser(path: String) = "browser?path=${Uri.encode(path)}"
     fun editor(path: String) = "editor?path=${Uri.encode(path)}"
 }
 
 @Composable
-private fun MarkNotesNavHost() {
+private fun MarkNotesNavHost(
+    sharedContent: StateFlow<SharedContent?>,
+    shareRequests: StateFlow<Int>,
+    onFinish: () -> Unit
+) {
     val navController = rememberNavController()
     val pathArg = listOf(
         navArgument("path") {
@@ -81,6 +106,14 @@ private fun MarkNotesNavHost() {
             defaultValue = ""
         }
     )
+    val shareRequest by shareRequests.collectAsStateWithLifecycle()
+    LaunchedEffect(shareRequest) {
+        if (shareRequest > 0) {
+            // A new share replaces an import screen that is still open.
+            navController.popBackStack(Routes.IMPORT, inclusive = true)
+            navController.navigate(Routes.IMPORT)
+        }
+    }
     NavHost(navController = navController, startDestination = Routes.BROWSER) {
         composable(Routes.BROWSER, arguments = pathArg) { entry ->
             BrowserScreen(
@@ -132,6 +165,24 @@ private fun MarkNotesNavHost() {
         }
         composable(Routes.CONFLICTS) {
             ConflictsScreen(onBack = { navController.navigateUp() })
+        }
+        composable(Routes.IMPORT) {
+            val content by sharedContent.collectAsStateWithLifecycle()
+            val current = content
+            if (current == null) {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+            } else {
+                ImportScreen(
+                    content = current,
+                    onSaved = { path ->
+                        navController.navigate(Routes.editor(path)) {
+                            popUpTo(Routes.IMPORT) { inclusive = true }
+                        }
+                    },
+                    // Return to the app the content was shared from.
+                    onCancel = onFinish
+                )
+            }
         }
     }
 }
