@@ -122,9 +122,10 @@ class MultiDriveSyncTest {
         for (side in listOf(local.read("n.md"), driveA.content("n.md"), driveB.content("n.md"))) {
             assertEquals("from a\n", side)
         }
-        assertEquals("from b\n", local.read(conflict.copyPath))
-        assertEquals("from b\n", driveA.content(conflict.copyPath))
-        assertEquals("from b\n", driveB.content(conflict.copyPath))
+        val copy = local.read(conflict.copyPath)
+        assertEquals("from b\n", copyBody(copy))
+        assertEquals(copy, driveA.content(conflict.copyPath))
+        assertEquals(copy, driveB.content(conflict.copyPath))
     }
 
     @Test
