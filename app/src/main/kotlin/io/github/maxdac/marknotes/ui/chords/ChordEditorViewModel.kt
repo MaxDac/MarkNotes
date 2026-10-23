@@ -91,6 +91,8 @@ class ChordEditorViewModel(private val container: AppContainer, val path: String
     @Volatile
     private var header = ""
 
+    private val unregisterSave = container.pendingSaves.register(::saveNow)
+
     init {
         load()
         // Reload when a sync changed the file, unless there are unsaved edits.
@@ -257,7 +259,7 @@ class ChordEditorViewModel(private val container: AppContainer, val path: String
             writeLock.withLock {
                 val body = pending ?: return@withLock
                 try {
-                    notes.write(path, header + body)
+                    notes.write(path, FrontMatter.join(header, body))
                     wrote = true
                     if (pending == body) pending = null
                 } catch (e: Exception) {
@@ -282,17 +284,25 @@ class ChordEditorViewModel(private val container: AppContainer, val path: String
     /** Saves pending edits now and lets the rest of the app (sync, browser) know, e.g. when leaving. */
     fun flush() {
         saveJob?.cancel()
-        container.appScope.launch {
+        val write = container.appScope.launch {
             write()
             if (wrote) {
                 wrote = false
                 container.notifyLocalChanged()
             }
         }
+        container.pendingSaves.track(write)
+    }
+
+    /** Writes pending edits now; a sync calls this before it lists the notes. */
+    private suspend fun saveNow() {
+        saveJob?.cancel()
+        write()
     }
 
     override fun onCleared() {
         flush()
+        unregisterSave()
         super.onCleared()
     }
 

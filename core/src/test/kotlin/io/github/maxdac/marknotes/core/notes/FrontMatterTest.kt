@@ -79,4 +79,13 @@ class FrontMatterTest {
         assertEquals(text, doc.text)
         assertEquals(text, doc.header + doc.body)
     }
+
+    @Test
+    fun joiningABodyToAHeaderWithoutFinalNewlineInsertsOne() {
+        assertEquals("---\nid: k7f3q2xa\n---\nHello", FrontMatter.join("---\nid: k7f3q2xa\n---", "Hello"))
+        assertEquals("---\r\nid: k\r\n---\r\nHi\r\n", FrontMatter.join("---\r\nid: k\r\n---", "Hi\r\n"))
+        assertEquals("---\nid: k\n---", FrontMatter.join("---\nid: k\n---", ""))
+        assertEquals("---\nid: k\n---\nHi", FrontMatter.join("---\nid: k\n---\n", "Hi"))
+        assertEquals("Hi", FrontMatter.join("", "Hi"))
+    }
 }

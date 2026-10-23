@@ -57,6 +57,8 @@ class EditorViewModel(private val container: AppContainer, val path: String) : V
     @Volatile
     private var header = ""
 
+    private val unregisterSave = container.pendingSaves.register(::saveNow)
+
     init {
         load()
         // Reload when a sync changed the file, unless there are unsaved edits.
@@ -231,11 +233,17 @@ class EditorViewModel(private val container: AppContainer, val path: String) : V
         val snapshot = _state.value
         if (!snapshot.dirty) return
         try {
-            withContext(Dispatchers.IO + NonCancellable) { notes.write(path, header + snapshot.text) }
+            withContext(Dispatchers.IO + NonCancellable) { notes.write(path, FrontMatter.join(header, snapshot.text)) }
             if (_state.value.text == snapshot.text) _state.value = _state.value.copy(dirty = false)
         } catch (e: Exception) {
             _state.value = _state.value.copy(error = "Could not save: ${e.message}")
         }
+    }
+
+    /** Writes pending edits now; a sync calls this before it lists the notes. */
+    private suspend fun saveNow() = withContext(Dispatchers.Main.immediate) {
+        saveJob?.cancel()
+        save()
     }
 
     fun showMessage(message: String) {
@@ -256,8 +264,8 @@ class EditorViewModel(private val container: AppContainer, val path: String) : V
         val snapshot = _state.value
         if (!snapshot.dirty) return
         _state.value = snapshot.copy(dirty = false)
-        val content = header + snapshot.text
-        container.appScope.launch(Dispatchers.IO) {
+        val content = FrontMatter.join(header, snapshot.text)
+        val write = container.appScope.launch(Dispatchers.IO) {
             try {
                 notes.write(path, content)
             } catch (e: Exception) {
@@ -265,10 +273,12 @@ class EditorViewModel(private val container: AppContainer, val path: String) : V
             }
             container.notifyLocalChanged()
         }
+        container.pendingSaves.track(write)
     }
 
     override fun onCleared() {
         flush()
+        unregisterSave()
         super.onCleared()
     }
 

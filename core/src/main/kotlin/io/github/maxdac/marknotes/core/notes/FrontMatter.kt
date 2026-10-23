@@ -30,7 +30,7 @@ data class NoteDocument(val header: String, val body: String) {
 
     val type: String? get() = FrontMatter.typeOf(header)
 
-    val text: String get() = header + body
+    val text: String get() = FrontMatter.join(header, body)
 }
 
 /**
@@ -53,6 +53,17 @@ object FrontMatter {
             start = end.next
         }
         return NoteDocument("", text)
+    }
+
+    /**
+     * Re-attaches an edited [body] to its front-matter [header]. A header that doesn't end with a line break gets
+     * one before a non-empty body (`\r\n` when its opening fence uses CRLF), so the closing `---` stays on its own
+     * line.
+     */
+    fun join(header: String, body: String): String {
+        if (header.isEmpty() || body.isEmpty() || header.endsWith("\n")) return header + body
+        val newline = if (header.startsWith("$DELIMITER\r\n")) "\r\n" else "\n"
+        return header + newline + body
     }
 
     /** Value of the `id` key in a front-matter [header], or null when missing or empty. */

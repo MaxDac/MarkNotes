@@ -7,17 +7,20 @@ import com.dropbox.core.v2.files.DeletedMetadata
 import com.dropbox.core.v2.files.DownloadErrorException
 import com.dropbox.core.v2.files.FileMetadata
 import com.dropbox.core.v2.files.FolderMetadata
+import com.dropbox.core.v2.files.GetMetadataErrorException
 import com.dropbox.core.v2.files.ListFolderContinueErrorException
 import com.dropbox.core.v2.files.ListFolderErrorException
 import com.dropbox.core.v2.files.ListFolderResult
 import com.dropbox.core.v2.files.Metadata
 import com.dropbox.core.v2.files.WriteMode
+import io.github.maxdac.marknotes.core.sync.RemoteChangedException
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStore
 import io.github.maxdac.marknotes.core.sync.RemoteEntry
 import io.github.maxdac.marknotes.core.sync.RemoteFolder
 import io.github.maxdac.marknotes.core.sync.RemoteFolderBrowser
 import io.github.maxdac.marknotes.core.sync.SyncManifest
 import java.io.ByteArrayOutputStream
+import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -42,7 +45,7 @@ class DropboxFolderBrowser(private val client: DbxClientV2) : RemoteFolderBrowse
 
 /**
  * Mirrors [syncFolder] of a Dropbox account. The first snapshot lists the folder recursively; later
- * ones only fetch the changes since the saved cursor.
+ * ones only fetch the changes since the saved cursor. Files carry the local edit time in `client_modified`.
  */
 class DropboxDriveStore(private val client: DbxClientV2, syncFolder: String) : RemoteDriveStore {
     private val root = dropboxPath(syncFolder)
@@ -108,8 +111,16 @@ class DropboxDriveStore(private val client: DbxClientV2, syncFolder: String) : R
         // Only the case of the path may differ between pathDisplay and pathLower.
         val relative = display.substring(root.length).trim('/')
         return when (metadata) {
-            is FileMetadata -> RemoteEntry(relative, metadata.id, false, metadata.rev, metadata.serverModified.time)
+            is FileMetadata -> RemoteEntry(
+                relative,
+                metadata.id,
+                false,
+                metadata.rev,
+                (metadata.clientModified ?: metadata.serverModified).time
+            )
+
             is FolderMetadata -> RemoteEntry(relative, metadata.id, true, "", 0L)
+
             else -> null
         }
     }
@@ -126,16 +137,18 @@ class DropboxDriveStore(private val client: DbxClientV2, syncFolder: String) : R
         out.toByteArray()
     }
 
-    override suspend fun uploadNew(path: String, bytes: ByteArray): RemoteEntry = upload(path, bytes, WriteMode.ADD)
+    override suspend fun uploadNew(path: String, bytes: ByteArray, modifiedMillis: Long): RemoteEntry =
+        upload(path, bytes, WriteMode.ADD, modifiedMillis)
 
-    override suspend fun uploadRevision(entry: RemoteEntry, bytes: ByteArray): RemoteEntry =
-        upload(entry.path, bytes, WriteMode.update(entry.version))
+    override suspend fun uploadRevision(entry: RemoteEntry, bytes: ByteArray, modifiedMillis: Long): RemoteEntry =
+        upload(entry.path, bytes, WriteMode.update(entry.version), modifiedMillis)
 
-    private suspend fun upload(path: String, bytes: ByteArray, mode: WriteMode): RemoteEntry =
+    private suspend fun upload(path: String, bytes: ByteArray, mode: WriteMode, modifiedMillis: Long): RemoteEntry =
         withContext(Dispatchers.IO) {
             val metadata = client.files().uploadBuilder(absolute(path))
                 .withMode(mode)
                 .withAutorename(false)
+                .withClientModified(if (modifiedMillis > 0L) Date(modifiedMillis) else null)
                 .uploadAndFinish(bytes.inputStream())
             remember(metadata)
         }
@@ -151,13 +164,29 @@ class DropboxDriveStore(private val client: DbxClientV2, syncFolder: String) : R
     }
 
     override suspend fun delete(entry: RemoteEntry): Unit = withContext(Dispatchers.IO) {
+        val path = absolute(entry.path)
         try {
-            client.files().deleteV2(absolute(entry.path))
+            // parent_rev: Dropbox only deletes the file if it is still the revision this device saw.
+            if (entry.isFolder) client.files().deleteV2(path) else client.files().deleteV2(path, entry.version)
         } catch (e: DeleteErrorException) {
-            if (!(e.errorValue.isPathLookup && e.errorValue.pathLookupValue.isNotFound)) throw e
+            val notFound = e.errorValue.isPathLookup && e.errorValue.pathLookupValue.isNotFound
+            if (entry.isFolder) {
+                if (!notFound) throw e
+            } else {
+                val current = currentMetadata(path)
+                if (current is FileMetadata && current.rev != entry.version) throw RemoteChangedException(entry.path)
+                if (current != null) throw e
+            }
         }
         val key = entry.path.lowercase(Locale.ROOT)
         entries.keys.removeAll { it == key || it.startsWith("$key/") }
+    }
+
+    private fun currentMetadata(path: String): Metadata? = try {
+        client.files().getMetadata(path)
+    } catch (e: GetMetadataErrorException) {
+        if (!(e.errorValue.isPath && e.errorValue.pathValue.isNotFound)) throw e
+        null
     }
 
     override suspend fun readManifest(): ByteArray? = withContext(Dispatchers.IO) {

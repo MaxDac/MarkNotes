@@ -1,5 +1,6 @@
 package io.github.maxdac.marknotes.core.sync.onedrive
 
+import io.github.maxdac.marknotes.core.sync.RemoteChangedException
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
@@ -104,16 +105,73 @@ class OneDriveDriveStoreTest {
             "PUT /v1.0/me/drive/items/root:/Work/My%20Note.md:/content?@microsoft.graph.conflictBehavior=fail",
             file("n4", "My Note.md", "f1", "c4")
         )
-        val created = store.uploadNew("Work/My Note.md", "hi".toByteArray())
+        val created = store.uploadNew("Work/My Note.md", "hi".toByteArray(), 0L)
         assertEquals("c4", created.version)
         assertEquals("Work/My Note.md", created.path)
 
         route("PUT /v1.0/me/drive/items/n2/content", file("n2", "Plan.md", "f1", "c5"))
-        val updated = store.uploadRevision(entries.getValue("Work/Plan.md"), "new".toByteArray())
+        val updated = store.uploadRevision(entries.getValue("Work/Plan.md"), "new".toByteArray(), 0L)
         assertEquals("c5", updated.version)
         val put = requests.last()
         assertEquals("e-c2", put.getHeader("If-Match"))
         assertEquals("new", put.body.readUtf8())
+    }
+
+    @Test
+    fun uploadsStampTheLocalEditTimeAndSnapshotsReadIt() = runTest {
+        val entries = store.snapshot().associateBy { it.path }
+        route("PUT /v1.0/me/drive/items/n2/content", file("n2", "Plan.md", "f1", "c5"))
+        route(
+            "PATCH /v1.0/me/drive/items/n2",
+            """{"id":"n2","name":"Plan.md","file":{},"cTag":"c5","eTag":"e-c5b","parentReference":{"id":"f1"},""" +
+                """"lastModifiedDateTime":"2024-06-01T00:00:00Z",""" +
+                """"fileSystemInfo":{"lastModifiedDateTime":"2024-05-01T10:00:00Z"}}"""
+        )
+        val edited = java.time.Instant.parse("2024-05-01T10:00:00Z").toEpochMilli()
+
+        val updated = store.uploadRevision(entries.getValue("Work/Plan.md"), "new".toByteArray(), edited)
+
+        assertEquals(edited, updated.modifiedMillis)
+        val patch = requests.last()
+        assertEquals("PATCH", patch.method)
+        assertTrue(patch.body.readUtf8().contains("\"lastModifiedDateTime\":\"2024-05-01T10:00:00Z\""))
+        // The PATCH changed the eTag: a later delete must use the new one.
+        route("DELETE /v1.0/me/drive/items/n2", "", 204)
+        store.delete(updated)
+        assertEquals("e-c5b", requests.last().getHeader("If-Match"))
+    }
+
+    @Test
+    fun deletingAFileChangedOnTheDriveFails() = runTest {
+        val entries = store.snapshot().associateBy { it.path }
+        route("DELETE /v1.0/me/drive/items/n1", """{"error":{"message":"precondition"}}""", 412)
+
+        val error = runCatching { store.delete(entries.getValue("Todo.md")) }.exceptionOrNull()
+
+        assertTrue(error is RemoteChangedException)
+        assertEquals("e-c1", requests.last().getHeader("If-Match"))
+    }
+
+    @Test
+    fun deletingAFolderIsUnconditionalAndAMissingItemIsAlreadyGone() = runTest {
+        val entries = store.snapshot().associateBy { it.path }
+        route("DELETE /v1.0/me/drive/items/f1", "", 204)
+        store.delete(entries.getValue("Work"))
+        assertNull(requests.last().getHeader("If-Match"))
+
+        store.delete(entries.getValue("Todo.md"))
+        assertEquals("e-c1", requests.last().getHeader("If-Match"))
+    }
+
+    @Test
+    fun aFailedTraversalDoesNotKeepTheDeltaLink() = runTest {
+        val children = routes.remove("GET /v1.0/me/drive/items/f1/children")!!
+        assertTrue(runCatching { store.snapshot() }.isFailure)
+        routes["GET /v1.0/me/drive/items/f1/children"] = children
+
+        assertEquals(3, store.snapshot().size)
+        assertEquals(2, requests.count { it.path == "/v1.0/me/drive/root/delta?token=latest" })
+        assertTrue(requests.none { it.path == "/v1.0/delta1" })
     }
 
     @Test

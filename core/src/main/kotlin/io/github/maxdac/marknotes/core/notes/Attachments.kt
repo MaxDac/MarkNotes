@@ -36,6 +36,10 @@ object Attachments {
 
     fun pathFor(bytes: ByteArray, extension: String): String = "$FOLDER/${Hashing.sha256Hex(bytes)}.$extension"
 
+    /** True when [bytes] hash to the SHA-256 in the name of the attachment at [path]. */
+    fun matchesName(path: String, bytes: ByteArray): Boolean =
+        NotePaths.name(path).substringBeforeLast('.').equals(Hashing.sha256Hex(bytes), ignoreCase = true)
+
     /** Saves [bytes] (unless an identical attachment exists) and returns its path. */
     fun save(store: LocalNoteStore, bytes: ByteArray, extension: String): String {
         require(bytes.size <= MAX_BYTES) { "Images must be smaller than ${MAX_BYTES / (1024 * 1024)} MB" }
