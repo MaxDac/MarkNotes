@@ -10,13 +10,13 @@ attachments, sync manifest, merge/conflicts) or the features.md matrix? See AGEN
 -->
 
 - [ ] None: Android-only change
-- [ ] Shared behaviour: spec PR in MaxDac/marknotes-spec: <!-- link --> and the `spec/` submodule is bumped here
+- [ ] Shared behaviour: spec PR in MaxDac/marknotes-spec: <!-- link -->, implemented in MaxDac/marknotes-android: <!-- link --> and the `libre/` submodule is bumped here
 - [ ] Desktop/web follow-ups: <!-- links to PRs or issues in marknotes-electron / marknotes-web -->
 
 ## Checklist
 
 - [ ] `./gradlew ktlintCheck detekt lintDebug testDebugUnitTest :core:test assembleDebug` passes locally
-- [ ] Parity tests pass (`./gradlew :core:parityTest` + `:app` `MentionParityTest`, see AGENTS.md) (when shared behaviour or `spec/` changed)
+- [ ] Parity tests pass (`./gradlew :core:parityTest` + `:app-shared` `MentionParityTest`, see AGENTS.md) (when shared behaviour or `libre/` changed)
 - [ ] Sync changes are covered by `SyncEngineTest` (against `FakeRemoteDriveStore`)
 - [ ] UI changes tested on an emulator/device (`./gradlew :app:connectedDebugAndroidTest`)
 - [ ] Proton requirements still met (`x-pm-appversion` header, official endpoints only, no Proton branding, third-party disclaimer on login)

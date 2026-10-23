@@ -27,6 +27,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
       - uses: ./.github/actions/setup-android-build
         with:
           setup-gradle: "false"

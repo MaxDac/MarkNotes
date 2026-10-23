@@ -1,1 +1,0 @@
-First release of MarkNotes on F-Droid: Markdown notes with folders, note links, images, chord sequences, import from other apps and optional Dropbox sync.

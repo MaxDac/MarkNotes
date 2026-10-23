@@ -27,6 +27,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
       - uses: ./.github/actions/setup-android-build
       - name: Build release APK
         run: ./gradlew assembleRelease

@@ -26,6 +26,8 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
       # GitHub can't resolve Gradle version catalogs or transitive dependencies statically, so submit the
       # resolved graph for the PR head first. Fork PRs get a read-only token and fall back to static parsing.
       - if: github.event.pull_request.head.repo.full_name == github.repository

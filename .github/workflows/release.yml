@@ -79,6 +79,8 @@ jobs:
       VERSION_CODE: ${{ needs.validate.outputs.version-code }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
       - name: Check cloud provider secrets
         env:
           DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}

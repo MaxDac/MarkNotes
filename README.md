@@ -2,6 +2,11 @@
 
 Simple Android markdown notes app with folders and sync to Proton Drive (unofficial), Dropbox and OneDrive.
 
+This repository builds **MarkNotes Pro** (`io.github.maxdac.marknotes`), published on GitHub Releases only. The
+app itself lives in [MaxDac/marknotes-android](https://github.com/MaxDac/marknotes-android), checked out here as the
+`libre/` git submodule: that repo builds the free-software **MarkNotes** app (Dropbox only), published on
+[F-Droid](https://f-droid.org). This repo adds OneDrive and Proton Drive on top of it.
+
 > **This is a third-party application not officially supported by Proton.**
 > MarkNotes is a personal, non-commercial project. It is not affiliated with or endorsed by Proton AG,
 > and it does not use any Proton logos or branding.
@@ -68,23 +73,30 @@ Simple Android markdown notes app with folders and sync to Proton Drive (unoffic
   signs you out, and revokes the session where the provider supports it.
 
 The on-disk note format (IDs, note links, images, chord sequences) is shared with the desktop and web apps and described in
-[marknotes-spec](https://github.com/MaxDac/marknotes-spec/blob/main/note-format.md), checked out at `spec/` as a git
-submodule (`git submodule update --init`).
+[marknotes-spec](https://github.com/MaxDac/marknotes-spec/blob/main/note-format.md), checked out at `libre/spec/` as a
+git submodule of marknotes-android.
 
 Out of scope: search, tags, background sync, widgets, local encryption.
 
 ## Project layout
 
-| Module | What it contains |
-| --- | --- |
-| `:core` | Pure Kotlin/JVM: local note store, sync engine (single and multi-drive) executing the plans of the shared [marknotes-sync](https://github.com/MaxDac/marknotes-sync) core, `RemoteDriveStore` interface, OneDrive (Microsoft Graph) store, Proton SRP + auth client. Fully unit tested. |
-| `:app` | Android app: Jetpack Compose + Material 3, Navigation Compose, MVVM with `StateFlow`, Room (drive accounts and sync metadata), manual DI, Dropbox store, Dropbox/MSAL sign-in. |
-| `:proton-drive` | Proton Drive store built on the [Proton Drive SDK](https://github.com/ProtonDriveApps/sdk), plus the protoncore network stack and address-key resolvers it needs. Always included. |
+| Module | Where | What it contains |
+| --- | --- | --- |
+| `:core` | `libre/core` | Pure Kotlin/JVM: local note store, sync engine (single and multi-drive) executing the plans of the shared [marknotes-sync](https://github.com/MaxDac/marknotes-sync) core, `RemoteDriveStore` interface. Fully unit tested. |
+| `:app-shared` | `libre/app-shared` | The Android app as a library: Jetpack Compose + Material 3, Navigation Compose, MVVM with `StateFlow`, Room (drive accounts and sync metadata), manual DI, `DriveConnector` extension points, Dropbox store and sign-in. |
+| `:pro-core` | `pro-core` | Pure Kotlin/JVM: OneDrive (Microsoft Graph) store, Proton SRP + auth client. Unit tested. |
+| `:proton-drive` | `proton-drive` | Proton Drive store built on the [Proton Drive SDK](https://github.com/ProtonDriveApps/sdk), plus the protoncore network stack and address-key resolvers it needs. Always included. |
+| `:app` | `app` | The Pro application: registers the Dropbox, OneDrive and Proton Drive connectors; MSAL sign-in and the Proton login screen. |
 
-The sync engine only talks to the `RemoteDriveStore` interface, so SDK changes stay contained in
-`:proton-drive`. Tests use an in-memory `FakeRemoteDriveStore`.
+`:core` and `:app-shared` come from the `libre/` submodule: change them in
+[marknotes-android](https://github.com/MaxDac/marknotes-android) first, then bump the submodule here (Dependabot
+opens the bump PRs). The sync engine only talks to the `RemoteDriveStore` interface, so SDK changes stay contained
+in `:proton-drive`. Tests use an in-memory `FakeRemoteDriveStore`.
 
 ## Build
+
+Clone with the submodules (`git clone --recurse-submodules`, or `git submodule update --init --recursive` in an
+existing clone): the build needs `libre/`.
 
 Requirements: JDK 21+ (Android Studio's bundled JBR works) and the Android SDK with platform 37
 (compileSdk 37, targetSdk 36). The app runs on Android 10+ (minSdk 29, required by the Proton Drive SDK).
@@ -94,15 +106,15 @@ The Gradle wrapper (9.8.1, AGP 9.4 with built-in Kotlin 2.4) is included:
 ./gradlew assembleDebug                      # build the debug APK
 ./gradlew ktlintCheck detekt lintDebug       # ktlint, detekt and Android Lint (ktlintFormat auto-fixes style)
 ./gradlew testDebugUnitTest :core:test       # unit tests (:core is a plain JVM module)
-./gradlew :core:parityTest                   # marknotes-spec fixtures (git submodule update --init first)
+./gradlew :core:parityTest                   # marknotes-spec fixtures (needs libre/spec)
 ./gradlew :app:connectedDebugAndroidTest     # Compose UI tests on a running emulator/device
 ```
 
 CI mirrors these commands. The checks live in the reusable `.github/workflows/checks.yml`: four required
 checks, "Lint (ktlint, detekt, Android Lint)", "Unit tests", "Instrumented tests (emulator)" and
 "Build debug APK". The debug APK always includes the Proton Drive SDK. A fifth check, "Parity (marknotes-spec
-fixtures)", checks out the `spec/` submodule and runs every [marknotes-spec](https://github.com/MaxDac/marknotes-spec)
-golden fixture against the real implementation (`./gradlew :core:parityTest` and the `:app` mention test;
+fixtures)", checks out the `libre/spec` submodule and runs every [marknotes-spec](https://github.com/MaxDac/marknotes-spec)
+golden fixture against the real implementation (`./gradlew :core:parityTest` and the `:app-shared` mention test;
 see AGENTS.md, "Cross-app parity").
 `pr-ci.yml` runs them on every pull request, and `main-ci.yml` reruns them on `main` and builds an unsigned
 release APK. All jobs run on `ubuntu-24.04`, like the desktop and web repos. Pull requests also run
@@ -116,7 +128,8 @@ Dependabot patch and minor updates (never majors or `me.proton.core`), so they m
 
 ### Releasing
 
-Releases are published only as signed APKs on GitHub Releases.
+Releases are published only as signed APKs on GitHub Releases. (The libre app is released from
+[marknotes-android](https://github.com/MaxDac/marknotes-android), which also publishes it on F-Droid.)
 
 **Repository secrets** (Settings → Secrets and variables → Actions):
 
@@ -204,7 +217,7 @@ versions in `gradle/libs.versions.toml`). The SDK's Kotlin bindings wrap the C# 
 published AAR bundles the NativeAOT library (`libproton_drive_sdk_jni.so`) for `arm64-v8a` and `x86_64`
 only, so the APK is limited to those ABIs and Proton Drive is unavailable on 32-bit devices.
 
-The SDK doesn't handle login, so MarkNotes keeps its own (`:core` `ProtonAuthClient`) and wires the
+The SDK doesn't handle login, so MarkNotes keeps its own (`:pro-core` `ProtonAuthClient`) and wires the
 session into the SDK (`ProtonDriveStoreFactory`):
 
 - a protoncore `ApiProvider` sends the SDK's requests with the stored session's UID and access token and

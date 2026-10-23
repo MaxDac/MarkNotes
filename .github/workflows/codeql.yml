@@ -37,6 +37,8 @@ jobs:
             build-mode: none
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
       - if: matrix.build-mode == 'manual'
         uses: ./.github/actions/setup-android-build
       - uses: github/codeql-action/init@v4

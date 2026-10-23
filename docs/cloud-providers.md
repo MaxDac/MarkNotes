@@ -15,6 +15,9 @@ The build reads three Gradle properties (see `app/build.gradle.kts`):
 Put them in your user-level `~/.gradle/gradle.properties` (on Windows `%USERPROFILE%\.gradle\gradle.properties`)
 or pass them with `-P`. Never commit them to the repository.
 
+This applies to the Pro app (this repo's `:app`). The libre app in `libre/` ([marknotes-android](https://github.com/MaxDac/marknotes-android))
+has only Dropbox, and its Dropbox app key is committed in `libre/app/build.gradle.kts`, so F-Droid can build it.
+
 ## 1. Signature hash (for OneDrive)
 
 MSAL checks that the APK is signed by the certificate registered in Entra. For local builds that's the
