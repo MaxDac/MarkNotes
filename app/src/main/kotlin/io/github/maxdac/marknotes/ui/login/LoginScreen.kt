@@ -31,21 +31,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import io.github.maxdac.marknotes.appContainer
+import io.github.maxdac.marknotes.sync.ProtonConnector
 
 const val THIRD_PARTY_DISCLAIMER = "This is a third-party application not officially supported by Proton."
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LoginScreen(onLoggedIn: () -> Unit, onBack: () -> Unit) {
-    val container = LocalContext.current.appContainer
-    val vm: LoginViewModel = viewModel { LoginViewModel(container) }
+fun LoginScreen(proton: ProtonConnector, onLoggedIn: () -> Unit, onBack: () -> Unit) {
+    val vm: LoginViewModel = viewModel { LoginViewModel(proton) }
     val state by vm.state.collectAsStateWithLifecycle()
     var username by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }

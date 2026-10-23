@@ -8,3 +8,4 @@
 - Use `/parity-check <feature>` (`.claude/commands/parity-check.md`) before and after changing anything in
   the cross-app parity areas listed in `AGENTS.md`.
 - Read sibling repos (marknotes-electron, marknotes-web, marknotes-spec) with `gh` rather than cloning them.
+- Shared code is in the `libre/` submodule (MaxDac/marknotes-android): change it there, not in this repo.

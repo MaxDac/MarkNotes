@@ -1,9 +1,9 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
 }
 
+// The Pro build: libre/app-shared plus OneDrive and Proton Drive. Published on GitHub releases only.
 android {
     namespace = "io.github.maxdac.marknotes"
     compileSdk = 37
@@ -88,76 +88,17 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":core"))
-    implementation(variantOf(libs.marknotes.sync.android) { artifactType("aar") })
-    implementation(variantOf(libs.jna) { artifactType("aar") })
+    implementation(project(":app-shared"))
+    implementation(project(":pro-core"))
     // Proton Drive SDK bridge (GPLv3, ships NativeAOT native libraries).
     implementation(project(":proton-drive"))
-
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.activity.compose)
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
-    implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.markwon.core)
-    implementation(libs.markwon.strikethrough)
-    implementation(libs.markwon.tables)
-    implementation(libs.markwon.tasklist)
-    implementation(libs.markwon.image)
-    implementation(libs.markwon.syntax.highlight) {
-        exclude(group = "org.jetbrains", module = "annotations-java5")
-    }
-    implementation(libs.prism4j) {
-        exclude(group = "org.jetbrains", module = "annotations-java5")
-    }
-    // Prism4j generates its grammar locator with a javac annotation processor (see CodeGrammars.java).
-    annotationProcessor(libs.prism4j.bundler)
-    implementation(libs.dropbox.android)
-    // Text extraction from shared PDFs (see ui/importing).
-    implementation(libs.pdfbox.android)
-    constraints {
-        // pdfbox-android's Bouncy Castle 1.72 has known vulnerabilities.
-        implementation(libs.bouncycastle.bcprov.jdk15to18)
-        implementation(libs.bouncycastle.bcpkix.jdk15to18)
-        implementation(libs.bouncycastle.bcutil.jdk15to18)
-        // The Dropbox SDK's jackson-core 2.15 has known vulnerabilities (GHSA-r7wm-3cxj-wff9, GHSA-7hhh-6rmp-j9qf).
-        implementation(libs.jackson.core)
-        // prism4j-bundler's commons-io 2.6 (GHSA-78wr-2p64-hpwj, GHSA-gwrp-pvrq-jmwv); compile time only.
-        annotationProcessor(libs.commons.io)
-    }
-    implementation(libs.msal)
+    implementation(pro.msal)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-
-    testImplementation(libs.junit)
-    // marknotes-spec fixture loader (core/src/testFixtures).
-    testImplementation(testFixtures(project(":core")))
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.espresso.core)
-}
-
-tasks.withType<Test>().configureEach {
-    // MentionParityTest runs a marknotes-spec fixture from the spec/ submodule; the parity CI job sets
-    // -Pmarknotes.parity.required=true so a missing submodule fails instead of skipping.
-    systemProperty("marknotes.specDir", rootProject.file("spec").absolutePath)
-    systemProperty(
-        "marknotes.parity.required",
-        providers.gradleProperty("marknotes.parity.required").getOrElse("false")
-    )
-    inputs.files(rootProject.fileTree("spec/fixtures") { include("**/*.json") })
-        .withPathSensitivity(PathSensitivity.RELATIVE)
-        .withPropertyName("specFixtures")
 }

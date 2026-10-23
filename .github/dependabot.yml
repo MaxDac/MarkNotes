@@ -16,7 +16,7 @@ updates:
     schedule:
       interval: weekly
 
-  # The spec/ submodule (MaxDac/marknotes-spec): bumps run the new fixtures in the Parity check.
+  # The libre/ submodule (MaxDac/marknotes-android, the shared code). Its own spec/ submodule is bumped there.
   - package-ecosystem: gitsubmodule
     directory: /
     schedule:

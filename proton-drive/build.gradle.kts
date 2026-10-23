@@ -25,15 +25,15 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":core"))
+    implementation(project(":pro-core"))
     // Proton Drive SDK: Kotlin bindings over the C# SDK, shipping NativeAOT libraries.
-    implementation(libs.proton.drive.sdk)
-    implementation(libs.proton.core.domain)
-    implementation(libs.proton.core.network.data)
-    implementation(libs.proton.core.network.domain)
-    implementation(libs.proton.core.crypto.android)
-    implementation(libs.proton.core.crypto.common)
-    implementation(libs.proton.core.util.kotlin)
+    implementation(pro.proton.drive.sdk)
+    implementation(pro.proton.core.domain)
+    implementation(pro.proton.core.network.data)
+    implementation(pro.proton.core.network.domain)
+    implementation(pro.proton.core.crypto.android)
+    implementation(pro.proton.core.crypto.common)
+    implementation(pro.proton.core.util.kotlin)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
 
