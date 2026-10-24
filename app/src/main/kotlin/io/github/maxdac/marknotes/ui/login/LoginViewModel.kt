@@ -5,7 +5,10 @@ import androidx.lifecycle.viewModelScope
 import io.github.maxdac.marknotes.core.auth.LoginResult
 import io.github.maxdac.marknotes.core.auth.ProtonApiException
 import io.github.maxdac.marknotes.core.auth.ProtonSession
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import io.github.maxdac.marknotes.sync.ProtonConnector
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -17,7 +20,10 @@ data class LoginState(
     val done: Boolean = false
 )
 
-class LoginViewModel(private val proton: ProtonConnector) : ViewModel() {
+class LoginViewModel(
+    private val proton: ProtonConnector,
+    private val diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
+) : ViewModel() {
     private val _state = MutableStateFlow(LoginState())
     val state: StateFlow<LoginState> = _state
 
@@ -45,7 +51,10 @@ class LoginViewModel(private val proton: ProtonConnector) : ViewModel() {
         // Key passphrases are needed by the Drive SDK for decryption; failing here is not fatal for login.
         val passphrases = try {
             proton.authClient.fetchKeyPassphrases(session, password)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            diagnostics.report(DiagnosticCode.AUTHENTICATION, e)
             emptyMap<String, String>()
         }
         password = ""
@@ -60,9 +69,13 @@ class LoginViewModel(private val proton: ProtonConnector) : ViewModel() {
             _state.value = _state.value.copy(busy = true, error = null)
             try {
                 block()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: ProtonApiException) {
+                diagnostics.report(DiagnosticCode.AUTHENTICATION, e)
                 _state.value = _state.value.copy(error = e.userMessage)
             } catch (e: Exception) {
+                diagnostics.report(DiagnosticCode.AUTHENTICATION, e)
                 _state.value = _state.value.copy(error = e.message ?: "Login failed")
             } finally {
                 _state.value = _state.value.copy(busy = false)

@@ -3,6 +3,8 @@ package io.github.maxdac.marknotes.sync
 import io.github.maxdac.marknotes.core.auth.ProtonAuthClient
 import io.github.maxdac.marknotes.core.auth.ProtonSession
 import io.github.maxdac.marknotes.core.auth.SessionStorage
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import io.github.maxdac.marknotes.core.sync.DriveAccount
 import io.github.maxdac.marknotes.core.sync.DriveProvider
 import io.github.maxdac.marknotes.core.sync.ProtonSessionSource
@@ -10,7 +12,9 @@ import io.github.maxdac.marknotes.core.sync.RemoteDriveStore
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStoreFactory
 import io.github.maxdac.marknotes.core.sync.RemoteEntry
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -28,6 +32,8 @@ class ProtonConnectorTest {
     private lateinit var cacheDir: File
     private val storage = MemorySessionStorage(SESSION)
     private val factory = RecordingFactory()
+    private val events = mutableListOf<Pair<DiagnosticCode, Throwable?>>()
+    private val diagnostics = DiagnosticReporter { code, failure -> events += code to failure }
 
     @Before
     fun setUp() {
@@ -48,7 +54,8 @@ class ProtonConnectorTest {
         sessionStorage = storage,
         authClient = ProtonAuthClient(baseUrl = server.url("/").toString().trimEnd('/'), appVersion = APP_VERSION),
         factory = factory,
-        cacheDir = cacheDir
+        cacheDir = cacheDir,
+        diagnostics = diagnostics
     )
 
     @Test
@@ -65,6 +72,7 @@ class ProtonConnectorTest {
         assertEquals(APP_VERSION, logout.getHeader("x-pm-appversion"))
         assertEquals(SESSION.uid, logout.getHeader("x-pm-uid"))
         assertSessionAndCacheGone(connector)
+        assertTrue(events.isEmpty())
     }
 
     @Test
@@ -77,6 +85,39 @@ class ProtonConnectorTest {
 
         assertEquals(1, server.requestCount)
         assertSessionAndCacheGone(connector)
+        assertEquals(listOf(DiagnosticCode.SIGN_OUT), events.map { it.first })
+    }
+
+    @Test
+    fun failedStoreCloseIsReportedWithoutPreventingLocalCleanup() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Code":1000}"""))
+        val connector = connector()
+        connector.store(ACCOUNT)
+        val failure = IOException("private note path /Notes/secret.md and account")
+        factory.created.single().closeFailure = failure
+
+        connector.signOut(ProtonConnector.ACCOUNT_ID)
+
+        assertSessionAndCacheGone(connector)
+        assertEquals(listOf(DiagnosticCode.SDK_ERROR to failure), events)
+    }
+
+    @Test
+    fun cancelledStoreCloseIsNotReportedAsAnError() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Code":1000}"""))
+        val connector = connector()
+        connector.store(ACCOUNT)
+        val cancellation = CancellationException("cancelled")
+        factory.created.single().closeFailure = cancellation
+
+        try {
+            connector.signOut(ProtonConnector.ACCOUNT_ID)
+            error("Cancellation must propagate")
+        } catch (expected: CancellationException) {
+            assertEquals(cancellation, expected)
+        }
+
+        assertTrue(events.isEmpty())
     }
 
     @Test
@@ -164,9 +205,11 @@ class ProtonConnectorTest {
         RemoteDriveStore,
         AutoCloseable {
         var closed = false
+        var closeFailure: Exception? = null
 
         override fun close() {
             closed = true
+            closeFailure?.let { throw it }
         }
 
         override suspend fun snapshot(): List<RemoteEntry> = emptyList()

@@ -13,6 +13,8 @@ import com.microsoft.identity.client.exception.MsalException
 import com.microsoft.identity.client.exception.MsalUiRequiredException
 import io.github.maxdac.marknotes.BuildConfig
 import io.github.maxdac.marknotes.auth.CredentialStore
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import io.github.maxdac.marknotes.core.sync.DriveAccount
 import io.github.maxdac.marknotes.core.sync.DriveProvider
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStore
@@ -38,7 +40,11 @@ import org.json.JSONObject
  * OneDrive (personal and work/school accounts) through Microsoft Graph. Tokens are managed by MSAL;
  * only the MSAL account id is stored, under the drive account id.
  */
-class OneDriveConnector(private val context: Context, private val credentials: CredentialStore) : DriveConnector {
+class OneDriveConnector(
+    private val context: Context,
+    private val credentials: CredentialStore,
+    private val diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
+) : DriveConnector {
     override val provider = DriveProvider.ONEDRIVE
 
     private val http by lazy { OkHttpClient() }
@@ -100,8 +106,10 @@ class OneDriveConnector(private val context: Context, private val credentials: C
                 app.getAccount(msalId)?.let { app.removeAccount(it) }
             } catch (e: MsalException) {
                 // The account is forgotten locally regardless.
+                diagnostics.report(DiagnosticCode.SIGN_OUT, e)
             } catch (e: InterruptedException) {
                 // Same as above.
+                diagnostics.report(DiagnosticCode.SIGN_OUT, e)
             }
         }
     }
