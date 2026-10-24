@@ -3,10 +3,10 @@ package io.github.maxdac.marknotes.sync
 import android.content.Context
 import android.os.Build
 import androidx.activity.ComponentActivity
+import io.github.maxdac.marknotes.core.auth.ProtonAccountSessionStorage
 import io.github.maxdac.marknotes.core.auth.ProtonApiException
 import io.github.maxdac.marknotes.core.auth.ProtonAuthClient
 import io.github.maxdac.marknotes.core.auth.ProtonSession
-import io.github.maxdac.marknotes.core.auth.SessionStorage
 import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
 import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import io.github.maxdac.marknotes.core.sync.DriveAccount
@@ -23,78 +23,67 @@ import io.github.maxdac.marknotes.ui.login.LoginScreen
 import io.github.maxdac.marknotes.ui.login.THIRD_PARTY_DISCLAIMER
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/**
- * Proton Drive, through the Proton Drive SDK (:proton-drive). Sign-in goes through the in-app login
- * screen ([signInScreen]): [signIn] only returns the account of the session that screen saved. A single Proton
- * account is supported.
- *
- * The SDK client lives across syncs and refreshes the tokens through this [ProtonSessionSource] when the
- * API answers 401, so the stored session stays the only copy of the tokens.
- */
+/** Each account owns its session source, refresh mutex, SDK stores and cache directory. */
 class ProtonConnector(
-    private val sessionStorage: SessionStorage,
+    private val sessionStorage: ProtonAccountSessionStorage,
     val authClient: ProtonAuthClient,
-    private val factory: RemoteDriveStoreFactory,
-    /** The SDK's cache ([ProtonDriveStoreFactory.cacheDir]), deleted with the session. */
+    private val factory: (String) -> RemoteDriveStoreFactory,
     private val cacheDir: File,
     override val unavailableReason: String? = null,
     private val diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
-) : DriveConnector, ProtonSessionSource {
+) : DriveConnector {
     constructor(
         context: Context,
-        sessionStorage: SessionStorage,
+        sessionStorage: ProtonAccountSessionStorage,
         authClient: ProtonAuthClient,
         diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
     ) : this(
         sessionStorage = sessionStorage,
         authClient = authClient,
-        factory = ProtonDriveStoreFactory(context, diagnostics = diagnostics),
+        factory = { accountId ->
+            ProtonDriveStoreFactory(
+                context,
+                diagnostics = diagnostics,
+                cacheDirectory = accountCacheDir(ProtonDriveStoreFactory.cacheDir(context), accountId)
+            )
+        },
         cacheDir = ProtonDriveStoreFactory.cacheDir(context),
-        // The SDK ships native libraries for 64-bit ABIs only.
         unavailableReason = if (Build.SUPPORTED_64_BIT_ABIS.isEmpty()) "Proton Drive needs a 64-bit device." else null,
         diagnostics = diagnostics
     )
 
     override val provider = DriveProvider.PROTON
-
-    private val storeLock = Mutex()
-    private val refreshLock = Mutex()
-
-    @Volatile
-    private var cached: Pair<String, RemoteDriveStore>? = null
-
-    /** Replaced stores, closed on the next [store] call: they may be dropped from inside one of their requests. */
-    private val retired = mutableListOf<RemoteDriveStore>()
-
-    private val _session = MutableStateFlow(sessionStorage.load())
-    val session: StateFlow<ProtonSession?> = _session
-
-    override val current: ProtonSession?
-        get() = _session.value
-
-    override val singleAccount = true
-
-    // Proton's rules for third-party apps: the disclaimer is shown on the login screen and in Settings.
     override val notice = THIRD_PARTY_DISCLAIMER
-
     override val signInScreen: SignInScreen = { onDone, onBack ->
         LoginScreen(this, onLoggedIn = onDone, onBack = onBack, diagnostics = diagnostics)
     }
 
-    override fun needsSignInScreen() = _session.value == null
+    private val storeLock = Mutex()
+    private val accounts = run {
+        val sessions = sessionStorage.loadAll()
+        val userIds = sessionStorage.loadUserIds()
+        (sessions.keys + userIds.keys).associateWith { id ->
+            Account(id, sessions[id], userIds[id] ?: sessions[id]?.userId.orEmpty())
+        }.toMutableMap()
+    }
 
-    /** v1 synced a single Proton Drive folder: a saved Proton session becomes a drive account. */
-    override suspend fun legacyAccount(settings: AppSettings): DriveAccount? {
-        val session = _session.value ?: return null
-        return DriveAccount(
+    @Volatile
+    private var signedInId: String? = null
+
+    // A completed login is consumed once by AddDriveViewModel when it returns from the login screen.
+    override fun needsSignInScreen() = signedInId == null
+
+    override suspend fun legacyAccount(settings: AppSettings): DriveAccount? = storeLock.withLock {
+        val session = accounts[ACCOUNT_ID]?.current ?: return@withLock null
+        DriveAccount(
             id = ACCOUNT_ID,
             provider = provider,
             label = session.username.ifBlank { provider.displayName },
@@ -103,109 +92,170 @@ class ProtonConnector(
         )
     }
 
-    fun onLoggedIn(session: ProtonSession) {
-        sessionStorage.save(session)
-        _session.value = session
-        retireCachedStore()
+    suspend fun onLoggedIn(session: ProtonSession) = storeLock.withLock {
+        val existing = accounts.values.firstOrNull {
+            if (session.userId.isNotBlank() && it.userId.isNotBlank()) {
+                it.userId == session.userId
+            } else {
+                session.username.isNotBlank() && it.username.equals(session.username, ignoreCase = true)
+            }
+        }
+        val id = existing?.id ?: "proton-${UUID.randomUUID()}"
+        existing?.refreshLock?.withLock {
+            existing.retire()
+            existing.current = null
+        }
+        existing?.closeRetired()
+        deleteCache(id)
+        sessionStorage.save(id, session)
+        accounts[id] = Account(id, session, session.userId)
+        signedInId = id
     }
 
-    override suspend fun signIn(activity: ComponentActivity): SignedInAccount? {
-        val session = _session.value ?: return null
-        return SignedInAccount(ACCOUNT_ID, provider, session.username.ifBlank { provider.displayName })
+    override suspend fun signIn(activity: ComponentActivity): SignedInAccount? = takeSignedInAccount()
+
+    internal suspend fun takeSignedInAccount(): SignedInAccount? = storeLock.withLock {
+        val id = signedInId ?: return@withLock null
+        signedInId = null
+        val session = accounts[id]?.current ?: return@withLock null
+        SignedInAccount(id, provider, session.username.ifBlank { provider.displayName })
     }
 
     override suspend fun folderBrowser(accountId: String): RemoteFolderBrowser? = null
 
     override suspend fun store(account: DriveAccount): RemoteDriveStore = storeLock.withLock {
         unavailableReason?.let { throw RemoteUnavailableException(it) }
-        val session = _session.value ?: throw RemoteUnavailableException(LOGIN_AGAIN)
-        val key = session.uid + "|" + account.syncFolder
-        val existing = cached?.takeIf { it.first == key }?.second
-        if (existing == null) retireCachedStore()
-        closeRetiredStores()
-        existing ?: factory.create(this, account.syncFolder).also { cached = key to it }
-    }
-
-    override suspend fun signOut(accountId: String) {
-        logOut()
-        deleteSessionData()
-    }
-
-    /** Same as [signOut], but fails when the SDK cache could not be deleted. */
-    override suspend fun deleteLocalData() {
-        logOut()
-        if (!deleteSessionData()) throw IOException("Could not delete the Proton Drive cache")
-    }
-
-    /** Revokes the session on Proton's side, best effort: the local session is dropped regardless. */
-    private suspend fun logOut() {
-        val session = _session.value ?: return
-        try {
-            authClient.logout(session)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Dropped locally anyway; the server expires it on its own.
-            diagnostics.report(DiagnosticCode.SIGN_OUT, e)
+        val owner = accounts[account.id] ?: throw RemoteUnavailableException(LOGIN_AGAIN)
+        owner.refreshLock.withLock {
+            if (owner.cached?.first != account.syncFolder) owner.retire()
         }
-    }
-
-    /**
-     * Forgets the session, closes the SDK clients and deletes their cache. Holds [storeLock] so no store is created
-     * meanwhile, and closes the stores first so the SDK no longer uses the cache database. Returns whether the cache
-     * is gone.
-     */
-    private suspend fun deleteSessionData(): Boolean {
-        clearSession()
-        return storeLock.withLock {
-            closeRetiredStores()
-            withContext(Dispatchers.IO) { cacheDir.deleteRecursively() || !cacheDir.exists() }
+        owner.closeRetired()
+        if (owner.current == null) {
+            deleteCache(account.id)
+            throw RemoteUnavailableException(LOGIN_AGAIN)
         }
-    }
-
-    /** Refreshes the tokens unless another caller already did, dropping the session when they're revoked. */
-    override suspend fun refresh(staleAccessToken: String): ProtonSession? = refreshLock.withLock {
-        val session = _session.value ?: return@withLock null
-        if (session.accessToken != staleAccessToken) return@withLock session
-        try {
-            authClient.refresh(session).also {
-                sessionStorage.save(it)
-                _session.value = it
+        owner.cached?.second ?: factory(account.id).create(owner, account.syncFolder).also { created ->
+            owner.refreshLock.withLock {
+                owner.cached = account.syncFolder to created
+                if (owner.current == null) owner.retire()
             }
-        } catch (e: ProtonApiException) {
-            // Proton answers 400/401/422 for an invalid refresh token; other errors (e.g. 429) are transient.
-            if (e.httpStatus == 400 || e.httpStatus == 401 || e.httpStatus == 422) {
-                clearSession()
-                throw RemoteUnavailableException(SESSION_EXPIRED, e)
+            if (owner.current == null) {
+                owner.closeRetired()
+                deleteCache(account.id)
+                throw RemoteUnavailableException(LOGIN_AGAIN)
             }
-            throw RemoteUnavailableException(e.userMessage, e)
         }
     }
 
-    override suspend fun invalidate() {
-        clearSession()
+    override suspend fun signOut(accountId: String) = storeLock.withLock {
+        removeAccount(accountId)
     }
 
-    private fun clearSession() {
-        sessionStorage.clear()
-        _session.value = null
-        retireCachedStore()
+    override suspend fun deleteLocalData() = storeLock.withLock {
+        accounts.keys.toList().forEach { removeAccount(it) }
+        withContext(Dispatchers.IO) {
+            if (!cacheDir.deleteRecursively() && cacheDir.exists()) {
+                throw IOException("Could not delete the Proton Drive cache")
+            }
+        }
     }
 
-    private fun retireCachedStore() {
-        val store = cached?.second ?: return
-        cached = null
-        synchronized(retired) { retired += store }
-    }
-
-    private fun closeRetiredStores() {
-        val stores = synchronized(retired) { retired.toList().also { retired.clear() } }
-        stores.forEach { store ->
-            (store as? AutoCloseable)?.let {
-                runCatching { it.close() }.onFailure { failure ->
-                    if (failure is CancellationException) throw failure
-                    diagnostics.report(DiagnosticCode.SDK_ERROR, failure)
+    private suspend fun removeAccount(id: String) {
+        val account = accounts[id]
+        account?.refreshLock?.withLock {
+            account.current?.let { session ->
+                try {
+                    authClient.logout(session)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    diagnostics.report(DiagnosticCode.SIGN_OUT, e)
                 }
+            }
+            account.clear()
+        }
+        account?.closeRetired()
+        sessionStorage.remove(id)
+        accounts.remove(id)
+        if (signedInId == id) signedInId = null
+        deleteCache(id)
+    }
+
+    private suspend fun deleteCache(id: String) = withContext(Dispatchers.IO) {
+        val directory = accountCacheDir(cacheDir, id)
+        if (!directory.deleteRecursively() && directory.exists()) {
+            throw IOException("Could not delete the Proton Drive cache")
+        }
+        // Before multiple accounts, the SDK database lived directly in the root.
+        if (id == ACCOUNT_ID) {
+            listOf("cache.sqlite", "cache.sqlite-wal", "cache.sqlite-shm").forEach { name ->
+                val file = cacheDir.resolve(name)
+                if (!file.delete() && file.exists()) throw IOException("Could not delete the Proton Drive cache")
+            }
+        }
+    }
+
+    private inner class Account(
+        val id: String,
+        session: ProtonSession?,
+        val userId: String
+    ) : ProtonSessionSource {
+        val refreshLock = Mutex()
+        val username = session?.username.orEmpty()
+
+        @Volatile
+        override var current: ProtonSession? = session
+
+        @Volatile
+        var cached: Pair<String, RemoteDriveStore>? = null
+        private val retired = mutableListOf<RemoteDriveStore>()
+
+        override suspend fun refresh(staleAccessToken: String): ProtonSession? = refreshLock.withLock {
+            val session = current ?: return@withLock null
+            if (session.accessToken != staleAccessToken) return@withLock session
+            try {
+                authClient.refresh(session).also {
+                    sessionStorage.save(id, it)
+                    current = it
+                }
+            } catch (e: ProtonApiException) {
+                if (e.httpStatus == 400 || e.httpStatus == 401 || e.httpStatus == 422) {
+                    clear()
+                    throw RemoteUnavailableException(SESSION_EXPIRED, e)
+                }
+                throw RemoteUnavailableException(e.userMessage, e)
+            }
+        }
+
+        override suspend fun invalidate() = refreshLock.withLock { clear() }
+
+        fun clear() {
+            if (current == null) return
+            sessionStorage.invalidate(id)
+            current = null
+            retire()
+        }
+
+        fun retire() {
+            cached?.second?.let { store -> synchronized(retired) { retired += store } }
+            cached = null
+        }
+
+        // Never close an SDK client from inside its own refresh/invalidate callback.
+        fun closeRetired() {
+            val stores = synchronized(retired) { retired.toList() }
+            stores.forEach { store ->
+                (store as? AutoCloseable)?.let {
+                    try {
+                        it.close()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        diagnostics.report(DiagnosticCode.SDK_ERROR, e)
+                        throw IOException("Could not close the Proton Drive cache", e)
+                    }
+                }
+                synchronized(retired) { retired.remove(store) }
             }
         }
     }
@@ -214,5 +264,11 @@ class ProtonConnector(
         const val ACCOUNT_ID = MarkNotesDatabase.LEGACY_PROTON_ID
         private const val LOGIN_AGAIN = "Log in to Proton Drive again"
         private const val SESSION_EXPIRED = "Proton session expired, please log in again"
+
+        internal fun accountCacheDir(root: File, id: String): File {
+            val hash = MessageDigest.getInstance("SHA-256").digest(id.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            return root.resolve(hash)
+        }
     }
 }

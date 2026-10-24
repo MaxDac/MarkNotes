@@ -1,8 +1,8 @@
 package io.github.maxdac.marknotes.ui.login
 
+import io.github.maxdac.marknotes.core.auth.ProtonAccountSessionStorage
 import io.github.maxdac.marknotes.core.auth.ProtonAuthClient
 import io.github.maxdac.marknotes.core.auth.ProtonSession
-import io.github.maxdac.marknotes.core.auth.SessionStorage
 import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
 import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import io.github.maxdac.marknotes.core.sync.ProtonSessionSource
@@ -80,15 +80,19 @@ class LoginViewModelTest {
     }
 
     private fun connector(client: ProtonAuthClient) = ProtonConnector(
-        sessionStorage = object : SessionStorage {
-            override fun load(): ProtonSession? = null
-            override fun save(session: ProtonSession) = error("Not used")
-            override fun clear() = Unit
+        sessionStorage = object : ProtonAccountSessionStorage {
+            override fun loadAll(): Map<String, ProtonSession> = emptyMap()
+            override fun loadUserIds(): Map<String, String> = emptyMap()
+            override fun save(accountId: String, session: ProtonSession) = error("Not used")
+            override fun invalidate(accountId: String) = Unit
+            override fun remove(accountId: String) = Unit
         },
         authClient = client,
-        factory = object : RemoteDriveStoreFactory {
-            override suspend fun create(sessions: ProtonSessionSource, remoteFolderName: String): RemoteDriveStore =
-                error("Not used")
+        factory = {
+            object : RemoteDriveStoreFactory {
+                override suspend fun create(sessions: ProtonSessionSource, remoteFolderName: String): RemoteDriveStore =
+                    error("Not used")
+            }
         },
         cacheDir = File("unused-login-test-cache"),
         diagnostics = diagnostics
