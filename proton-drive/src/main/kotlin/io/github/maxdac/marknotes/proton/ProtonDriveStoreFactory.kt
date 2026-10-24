@@ -1,6 +1,7 @@
 package io.github.maxdac.marknotes.proton
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.util.Log
 import io.github.maxdac.marknotes.core.auth.ProtonAuthClient
 import io.github.maxdac.marknotes.core.sync.ProtonSessionSource
@@ -30,6 +31,8 @@ class ProtonDriveStoreFactory(
     private val appVersion: String = ProtonAuthClient.APP_VERSION
 ) : RemoteDriveStoreFactory {
     private val context = context.applicationContext
+
+    private val verboseLogging = this.context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     // Both the SDK and Retrofit resolve relative paths, so the base URL must end with '/'.
     private val baseUrl = baseUrl.trimEnd('/') + "/"
@@ -72,13 +75,8 @@ class ProtonDriveStoreFactory(
     }
 
     private fun log(level: LoggerProvider.Level, category: String, message: String) {
-        val priority = when (level) {
-            LoggerProvider.Level.VERBOSE, LoggerProvider.Level.DEBUG -> return
-            LoggerProvider.Level.INFO -> Log.INFO
-            LoggerProvider.Level.WARN -> Log.WARN
-            LoggerProvider.Level.ERROR -> Log.ERROR
-        }
-        Log.println(priority, TAG, "[$category] $message")
+        val line = sdkLogLine(level, category, message, verboseLogging) ?: return
+        Log.println(line.priority, TAG, line.text)
     }
 
     companion object {

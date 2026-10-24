@@ -36,10 +36,12 @@ app itself lives in [MaxDac/marknotes-android](https://github.com/MaxDac/marknot
   converts headings, lists, emphasis, links, tables and code; turn it off to keep the text as it is. Shared
   images and images inside `.docx` files are stored as attachments; web images stay links. Conversion runs on
   the device.
-- **Chord sequences** (guitar and bass, ported from [ChordBuilder](https://github.com/MaxDac/ChordBuilder)): the
+- **Chord sequences** (guitar and bass, ported from [ChordBuilder](https://github.com/MaxDac/ChordBuilder)), off by
+  default: turn on Settings → **Chord sequences** (stored on this device only, not synced). When on, the
   browser's **New chord sequence** action (in the floating **New** menu, next to **New note**, and on the
   empty-folder screen) creates a note with `type: chords` in its front-matter, shown with a
-  music icon. It opens in a chord editor instead of the markdown editor: an ordered list of chords with small
+  music icon. When off, opening a chord sequence (for example one created on another device) asks whether to
+  turn chord sequences on: **Yes** enables the setting and opens the note, **No** leaves the note closed. It opens in a chord editor instead of the markdown editor: an ordered list of chords with small
   diagrams (add, edit, duplicate, move, delete) and a builder with a horizontally scrollable fretboard (guitar
   frets 1–24; bass frets 9–24 with a red line after the 12th), finger selection, tags and a note. Each chord
   needs at least three non-muted strings; chords with the same name and instrument are numbered (`1 C`, `2 C`).
@@ -257,6 +259,13 @@ MarkNotes follows Proton's rules for third-party personal projects:
 ## Security notes
 
 - The password is only used to compute the SRP proof and key passphrases. It is never stored.
+- To sync without asking for the password again, the Proton session (access and refresh tokens) and the key
+  passphrases that unlock the drive's private keys are stored on the device, AES-GCM encrypted with a key held
+  in the Android Keystore. The Proton Drive SDK also keeps a metadata cache (`cache.sqlite`) in the app's
+  private cache directory. Disconnecting Proton Drive or deleting all local data deletes the session and the
+  cache. App backups are disabled.
+- Release builds only forward the SDK's warnings and errors to logcat, without their messages (which can
+  contain file names, paths or account IDs); debuggable builds log them in full.
 - The SRP modulus is extracted from Proton's PGP-signed message, but **the signature isn't verified
   yet**. That is acceptable for a personal project, but it should be added before wider use.
 - Accounts with a separate mailbox password (two-password mode) and FIDO2-only 2FA are not supported in v1.
