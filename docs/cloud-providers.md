@@ -146,6 +146,11 @@ Proton Drive needs no app registration and no secrets on Android, web or desktop
 New synced files and planned folders must be created without replacing or adopting an existing entry. A name
 conflict is a sync error, including when another device creates the entry after the listing.
 
+Shared local case-only renames use kernel-enforced no-replace operations, not a destination existence check
+followed by a potentially replacing move. Conflict copies are written privately with the losing edit time
+(including epoch zero) and flushed before atomic no-replace publication. Durable recovery verifies and reuses
+the same conflict-copy path and note ID after a crash; a racing edited destination is never overwritten.
+
 OneDrive and Proton Drive folder deletion is deliberately unsupported: their recursive delete/trash operations
 cannot atomically guarantee that a folder has no unseen children. Sync reports an error and keeps the folder's
 records for a later retry; it never falls back to recursive deletion. Files can still be synced individually.
