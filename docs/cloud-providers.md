@@ -135,6 +135,8 @@ Proton Drive needs no app registration and no secrets on Android, web or desktop
 - **Login**: Proton SRP with the account password, plus a TOTP code when 2FA is enabled. CAPTCHA/human
   verification, two-password mode and FIDO2-only accounts aren't supported; the app shows a clear error
   for them.
+- **Stored credentials**: the password is never stored. On Android the session tokens and the key passphrases
+  that unlock the drive's keys are kept on the device, encrypted with a key held in the Android Keystore.
 - **Every request** sends the header `x-pm-appversion: external-drive-marknotes@0.1.0-alpha`.
 - **Login screen** shows "This is a third-party application not officially supported by Proton."
 - **No Proton branding** (logos or similar) anywhere in the apps.
