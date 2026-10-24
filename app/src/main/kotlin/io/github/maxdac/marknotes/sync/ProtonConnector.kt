@@ -7,6 +7,8 @@ import io.github.maxdac.marknotes.core.auth.ProtonApiException
 import io.github.maxdac.marknotes.core.auth.ProtonAuthClient
 import io.github.maxdac.marknotes.core.auth.ProtonSession
 import io.github.maxdac.marknotes.core.auth.SessionStorage
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import io.github.maxdac.marknotes.core.sync.DriveAccount
 import io.github.maxdac.marknotes.core.sync.DriveProvider
 import io.github.maxdac.marknotes.core.sync.ProtonSessionSource
@@ -43,15 +45,22 @@ class ProtonConnector(
     private val factory: RemoteDriveStoreFactory,
     /** The SDK's cache ([ProtonDriveStoreFactory.cacheDir]), deleted with the session. */
     private val cacheDir: File,
-    override val unavailableReason: String? = null
+    override val unavailableReason: String? = null,
+    private val diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
 ) : DriveConnector, ProtonSessionSource {
-    constructor(context: Context, sessionStorage: SessionStorage, authClient: ProtonAuthClient) : this(
+    constructor(
+        context: Context,
+        sessionStorage: SessionStorage,
+        authClient: ProtonAuthClient,
+        diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
+    ) : this(
         sessionStorage = sessionStorage,
         authClient = authClient,
-        factory = ProtonDriveStoreFactory(context),
+        factory = ProtonDriveStoreFactory(context, diagnostics = diagnostics),
         cacheDir = ProtonDriveStoreFactory.cacheDir(context),
         // The SDK ships native libraries for 64-bit ABIs only.
-        unavailableReason = if (Build.SUPPORTED_64_BIT_ABIS.isEmpty()) "Proton Drive needs a 64-bit device." else null
+        unavailableReason = if (Build.SUPPORTED_64_BIT_ABIS.isEmpty()) "Proton Drive needs a 64-bit device." else null,
+        diagnostics = diagnostics
     )
 
     override val provider = DriveProvider.PROTON
@@ -77,7 +86,7 @@ class ProtonConnector(
     override val notice = THIRD_PARTY_DISCLAIMER
 
     override val signInScreen: SignInScreen = { onDone, onBack ->
-        LoginScreen(this, onLoggedIn = onDone, onBack = onBack)
+        LoginScreen(this, onLoggedIn = onDone, onBack = onBack, diagnostics = diagnostics)
     }
 
     override fun needsSignInScreen() = _session.value == null
@@ -137,6 +146,7 @@ class ProtonConnector(
             throw e
         } catch (e: Exception) {
             // Dropped locally anyway; the server expires it on its own.
+            diagnostics.report(DiagnosticCode.SIGN_OUT, e)
         }
     }
 
@@ -190,7 +200,14 @@ class ProtonConnector(
 
     private fun closeRetiredStores() {
         val stores = synchronized(retired) { retired.toList().also { retired.clear() } }
-        stores.forEach { store -> (store as? AutoCloseable)?.let { runCatching { it.close() } } }
+        stores.forEach { store ->
+            (store as? AutoCloseable)?.let {
+                runCatching { it.close() }.onFailure { failure ->
+                    if (failure is CancellationException) throw failure
+                    diagnostics.report(DiagnosticCode.SDK_ERROR, failure)
+                }
+            }
+        }
     }
 
     companion object {

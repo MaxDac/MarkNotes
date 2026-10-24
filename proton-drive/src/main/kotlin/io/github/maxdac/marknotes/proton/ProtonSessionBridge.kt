@@ -1,6 +1,8 @@
 package io.github.maxdac.marknotes.proton
 
 import io.github.maxdac.marknotes.core.auth.ProtonSession
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import io.github.maxdac.marknotes.core.sync.ProtonSessionSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -15,7 +17,10 @@ import me.proton.core.network.domain.session.SessionProvider
  * Exposes the MarkNotes session to protoncore's network stack. Token refreshes go through
  * [ProtonSessionSource] so the app's stored session stays the single source of truth.
  */
-internal class ProtonSessionBridge(private val sessions: ProtonSessionSource) : SessionProvider, SessionListener {
+internal class ProtonSessionBridge(
+    private val sessions: ProtonSessionSource,
+    private val diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
+) : SessionProvider, SessionListener {
     private val lock = Mutex()
 
     val userId: UserId?
@@ -44,6 +49,7 @@ internal class ProtonSessionBridge(private val sessions: ProtonSessionSource) : 
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
+        diagnostics.report(DiagnosticCode.AUTHENTICATION, e)
         false
     }
 

@@ -1,9 +1,12 @@
 package io.github.maxdac.marknotes.core.auth
 
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import io.github.maxdac.marknotes.core.sync.UserFacingError
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -58,7 +61,8 @@ class ProtonAuthClient(
     private val baseUrl: String = DEFAULT_BASE_URL,
     private val appVersion: String = APP_VERSION,
     httpClient: OkHttpClient = OkHttpClient(),
-    private val random: SecureRandom = SecureRandom()
+    private val random: SecureRandom = SecureRandom(),
+    private val diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
 ) {
     private val http: OkHttpClient = httpClient.newBuilder()
         .addInterceptor { chain ->
@@ -75,6 +79,7 @@ class ProtonAuthClient(
         val unauthSession = try {
             createUnauthSession()
         } catch (e: ProtonApiException) {
+            diagnostics.report(DiagnosticCode.AUTHENTICATION, e)
             null
         }
         val info = post("/core/v4/auth/info", buildJsonObject { put("Username", username) }, unauthSession)
@@ -179,8 +184,11 @@ class ProtonAuthClient(
     private fun logoutQuietly(session: ProtonSession) {
         try {
             execute(Request.Builder().url(baseUrl + "/core/v4/auth").authorized(session).delete().build())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Best effort: the session expires on its own.
+            diagnostics.report(DiagnosticCode.SIGN_OUT, e)
         }
     }
 

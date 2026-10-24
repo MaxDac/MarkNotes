@@ -1,23 +1,23 @@
 package io.github.maxdac.marknotes.proton
 
 import android.util.Log
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import me.proton.drive.sdk.LoggerProvider
 
 /** A logcat priority and line for one Proton Drive SDK log event. */
 internal data class SdkLogLine(val priority: Int, val text: String)
 
 /**
- * Maps an SDK log event to a logcat line, or null to drop it. Debuggable builds ([verbose]) keep INFO and above
- * with the full message. Release builds keep only warnings and errors, without the message: SDK messages can
- * contain file names, paths and account or node IDs.
+ * Keeps only fixed warning/error text in every build. SDK categories and messages can contain user data.
  */
-internal fun sdkLogLine(level: LoggerProvider.Level, category: String, message: String, verbose: Boolean): SdkLogLine? {
+internal fun sdkLogLine(level: LoggerProvider.Level, diagnostics: DiagnosticReporter): SdkLogLine? {
     val priority = when (level) {
-        LoggerProvider.Level.VERBOSE, LoggerProvider.Level.DEBUG -> return null
-        LoggerProvider.Level.INFO -> if (verbose) Log.INFO else return null
+        LoggerProvider.Level.VERBOSE, LoggerProvider.Level.DEBUG, LoggerProvider.Level.INFO -> return null
         LoggerProvider.Level.WARN -> Log.WARN
         LoggerProvider.Level.ERROR -> Log.ERROR
     }
-    val text = if (verbose) "[$category] $message" else "[$category] $level (details hidden in release builds)"
+    diagnostics.report(DiagnosticCode.SDK_ERROR, null)
+    val text = "Proton Drive SDK $level (details omitted)"
     return SdkLogLine(priority, text)
 }

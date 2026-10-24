@@ -36,14 +36,20 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import io.github.maxdac.marknotes.sync.ProtonConnector
 
 const val THIRD_PARTY_DISCLAIMER = "This is a third-party application not officially supported by Proton."
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LoginScreen(proton: ProtonConnector, onLoggedIn: () -> Unit, onBack: () -> Unit) {
-    val vm: LoginViewModel = viewModel { LoginViewModel(proton) }
+fun LoginScreen(
+    proton: ProtonConnector,
+    onLoggedIn: () -> Unit,
+    onBack: () -> Unit,
+    diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
+) {
+    val vm: LoginViewModel = viewModel { LoginViewModel(proton, diagnostics) }
     val state by vm.state.collectAsStateWithLifecycle()
     var username by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }

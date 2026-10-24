@@ -1,5 +1,7 @@
 package io.github.maxdac.marknotes.core.auth
 
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import java.util.Base64
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -90,6 +92,28 @@ class ProtonAuthClientTest {
     @After
     fun tearDown() {
         server.shutdown()
+    }
+
+    @Test
+    fun reportsUnauthenticatedSessionFailureWhilePreservingLoginFallback() = runTest {
+        val original = server.dispatcher
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                if (request.path == "/auth/v4/sessions") {
+                    MockResponse().setResponseCode(500).setBody("""{"Code":2000,"Error":"private response"}""")
+                } else {
+                    original.dispatch(request)
+                }
+        }
+        val events = mutableListOf<DiagnosticCode>()
+        val reportingClient = ProtonAuthClient(
+            baseUrl = server.url("").toString().trimEnd('/'),
+            diagnostics = DiagnosticReporter { code, _ -> events += code }
+        )
+
+        assertTrue(reportingClient.login("alice", password) is LoginResult.Success)
+
+        assertEquals(listOf(DiagnosticCode.AUTHENTICATION), events)
     }
 
     @Test

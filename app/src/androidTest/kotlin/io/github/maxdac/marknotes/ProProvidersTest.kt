@@ -1,6 +1,7 @@
 package io.github.maxdac.marknotes
 
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -31,6 +32,25 @@ class ProProvidersTest {
     @After
     fun tearDown() {
         scenario.close()
+    }
+
+    @Test
+    fun diagnosticsRequireReviewBeforeOpeningTheIssueDraft() {
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Report a problem").performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithText("Review problem report").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        compose.onNodeWithText("Review problem report").assertExists()
+        compose.onNodeWithText("Opening the draft sends this excerpt to GitHub", substring = true).assertExists()
+        compose.onNodeWithText("The issue is public after you submit it.", substring = true).assertExists()
+        compose.onNodeWithText("Open draft in browser").assertExists()
+        compose.onNodeWithText("Cancel").performClick()
+
+        compose.onNodeWithText("Review problem report").assertDoesNotExist()
+        compose.onNodeWithText("Export full sanitized logs").assertExists()
+        compose.onNodeWithText("Clear logs").assertExists()
     }
 
     @Test
