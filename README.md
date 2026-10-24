@@ -11,6 +11,14 @@ app itself lives in [MaxDac/marknotes-android](https://github.com/MaxDac/marknot
 > MarkNotes is a personal, non-commercial project. It is not affiliated with or endorsed by Proton AG,
 > and it does not use any Proton logos or branding.
 
+## Other MarkNotes apps
+
+MarkNotes shares the same notes folder across these apps (also listed in Settings → About):
+
+- [MarkNotes for Android (F-Droid)](https://f-droid.org/packages/io.github.maxdac.marknotes.libre/)
+- [MarkNotes Desktop (GitHub Releases)](https://github.com/MaxDac/marknotes-electron/releases)
+- [MarkNotes Web](https://marknotes.fly.dev)
+
 ## Features
 
 - **Offline-first notes**: every note is a `.md` file in a folder tree inside the app's private storage
