@@ -9,7 +9,6 @@ import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -61,37 +60,6 @@ class ProtonDriveStoreFactoryTest {
             }
         } finally {
             cache.deleteRecursively()
-        }
-
-        @Test
-        fun separateNativeClientsUseSeparateCacheDatabases() = runBlocking {
-            val context = InstrumentationRegistry.getInstrumentation().targetContext
-            val root = File(context.cacheDir, "proton-isolation-test-${UUID.randomUUID()}")
-            val a = root.resolve("a")
-            val b = root.resolve("b")
-            try {
-                val sessionsA = FakeSessions()
-                val sessionsB = FakeSessions().apply {
-                    current = current!!.copy(uid = "uid-b", userId = "user-b")
-                }
-                val first = ProtonDriveStoreFactory(context, cacheDirectory = a)
-                    .create(sessionsA, "MarkNotes") as ProtonDriveStore
-                first.use {
-                    val second = ProtonDriveStoreFactory(context, cacheDirectory = b)
-                        .create(sessionsB, "MarkNotes") as ProtonDriveStore
-                    second.use {
-                        assertTrue(a.resolve("cache.sqlite").isFile)
-                        assertTrue(b.resolve("cache.sqlite").isFile)
-                        assertEquals("uid", sessionsA.current?.uid)
-                        assertEquals("uid-b", sessionsB.current?.uid)
-                    }
-                    assertTrue(b.deleteRecursively())
-                    assertTrue(a.resolve("cache.sqlite").isFile)
-                }
-                assertTrue(a.deleteRecursively())
-            } finally {
-                root.deleteRecursively()
-            }
         }
     }
 }

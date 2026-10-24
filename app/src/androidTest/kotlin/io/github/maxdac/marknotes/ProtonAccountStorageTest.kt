@@ -9,7 +9,12 @@ import io.github.maxdac.marknotes.auth.KeystoreSessionStorage
 import io.github.maxdac.marknotes.core.auth.ProtonSession
 import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
 import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
+import io.github.maxdac.marknotes.core.sync.ProtonSessionSource
 import io.github.maxdac.marknotes.data.MarkNotesDatabase
+import io.github.maxdac.marknotes.proton.ProtonDriveStoreFactory
+import java.io.File
+import java.util.UUID
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -27,8 +32,12 @@ class ProtonAccountStorageTest {
     }
     private val prefs get() = context.getSharedPreferences("session", Context.MODE_PRIVATE)
     private val a = ProtonSession(
-        "uid-a", "access-a", "refresh-a", "alice",
-        userId = "user-a", keyPassphrases = mapOf("key" to "secret")
+        "uid-a",
+        "access-a",
+        "refresh-a",
+        "alice",
+        userId = "user-a",
+        keyPassphrases = mapOf("key" to "secret")
     )
     private val b = ProtonSession("uid-b", "access-b", "refresh-b", "bob", userId = "user-b")
 
@@ -121,5 +130,38 @@ class ProtonAccountStorageTest {
             assertEquals(mapOf("first" to a), storage.loadAll())
             assertEquals(mapOf("first" to "user-a"), storage.loadUserIds())
         }
+    }
+
+    @Test
+    fun separateNativeClientsUseSeparateCacheDatabases() = runBlocking {
+        val root = File(context.cacheDir, "proton-isolation-test-${UUID.randomUUID()}")
+        val cacheA = root.resolve("a")
+        val cacheB = root.resolve("b")
+        try {
+            val sessionsA = FixedSession(a)
+            val sessionsB = FixedSession(b)
+            val first = ProtonDriveStoreFactory(context, cacheDirectory = cacheA).create(sessionsA, "MarkNotes")
+            check(first is AutoCloseable)
+            first.use {
+                val second = ProtonDriveStoreFactory(context, cacheDirectory = cacheB).create(sessionsB, "MarkNotes")
+                check(second is AutoCloseable)
+                second.use {
+                    assertTrue(cacheA.resolve("cache.sqlite").isFile)
+                    assertTrue(cacheB.resolve("cache.sqlite").isFile)
+                    assertEquals(a, sessionsA.current)
+                    assertEquals(b, sessionsB.current)
+                }
+                assertTrue(cacheB.deleteRecursively())
+                assertTrue(cacheA.resolve("cache.sqlite").isFile)
+            }
+            assertTrue(cacheA.deleteRecursively())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    private class FixedSession(override val current: ProtonSession) : ProtonSessionSource {
+        override suspend fun refresh(staleAccessToken: String): ProtonSession? = error("No network request expected")
+        override suspend fun invalidate() = error("No network request expected")
     }
 }
