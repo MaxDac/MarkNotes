@@ -108,6 +108,12 @@ existing clone): the build needs `libre/`.
 
 Requirements: JDK 21+ (Android Studio's bundled JBR works) and the Android SDK with platform 37
 (compileSdk 37, targetSdk 36). The app runs on Android 10+ (minSdk 29, required by the Proton Drive SDK).
+When `libre/gradle/marknotes-sync-source.properties` is present, build the pinned shared sync artifacts first.
+On Linux, use `libre/scripts/build-sync-from-source.sh` with the toolchain from
+`libre/.github/actions/setup-sync-toolchain`; CI does this automatically. See
+[Development sync source builds](docs/cloud-providers.md#development-sync-source-builds) for the artifact
+location and source-checkout override. Development source pins deliberately block signed releases.
+
 The Gradle wrapper (9.8.1, AGP 9.4 with built-in Kotlin 2.4) is included:
 
 ```sh

@@ -52,6 +52,12 @@ without cloning, for example
 Requirements: JDK 21+ (Android Studio's JBR works) and the Android SDK with platform 37. On Windows use
 `.\gradlew.bat` and set `JAVA_HOME`/`ANDROID_HOME` if they aren't set.
 
+If `libre/gradle/marknotes-sync-source.properties` exists, build the pinned sync artifacts before Gradle:
+on Linux run `libre/scripts/build-sync-from-source.sh` with the toolchain from
+`libre/.github/actions/setup-sync-toolchain`. CI installs that toolchain and builds the exact source pin.
+See `docs/cloud-providers.md`, "Development sync source builds". Do not substitute older artifacts or publish
+a speculative release; signed release validation rejects development source pins.
+
 These mirror the required CI checks in `.github/workflows/checks.yml` (do not rename the jobs: the `main`
 ruleset requires them by name). They cover the shared modules from `libre/` too:
 
