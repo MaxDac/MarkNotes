@@ -41,6 +41,13 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          submodules: true
+      - name: Reject development sync source pins
+        run: |
+          if [ -f libre/gradle/marknotes-sync-source.properties ]; then
+            echo "::error::Release requires published, reviewed marknotes-sync artifacts; the development source pin is still present."
+            exit 1
+          fi
       - name: Validate version and tag
         id: version
         env:

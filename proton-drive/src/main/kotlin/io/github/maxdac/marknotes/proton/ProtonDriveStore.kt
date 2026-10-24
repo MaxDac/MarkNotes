@@ -133,18 +133,26 @@ class ProtonDriveStore(
     }
 
     override suspend fun createFolder(path: String): RemoteEntry {
-        ensureFolder(path)
-        return entries.getValue(NotePaths.normalize(path))
+        val normalized = NotePaths.normalize(path)
+        if (normalized.isEmpty()) throw IOException("Cannot create the synced folder itself")
+        if (entries.containsKey(normalized)) throw IOException("$path already exists on Proton Drive")
+        val parent = ensureFolder(NotePaths.parent(normalized))
+        val folder = client.createFolder(parent, NotePaths.name(normalized))
+        return RemoteEntry(normalized, folder.uid.value, true, "", folder.creationTime.toEpochMilli())
+            .also { entries[normalized] = it }
     }
 
     override suspend fun delete(entry: RemoteEntry) {
-        if (!entry.isFolder) {
-            // Trash only the revision this device saw: a newer one means another device changed the file.
-            val current = client.enumerateNodes(listOf(NodeUid(entry.id))).toList()
-                .filterIsInstance<FileNode>().firstOrNull { it.trashTime == null }
-                ?: return forget(entry)
-            if (current.activeRevision.uid.value != entry.version) throw RemoteChangedException(entry.path)
+        if (entry.isFolder) {
+            throw IOException(
+                "Safe empty-folder deletion is not supported by Proton Drive: ${entry.path}"
+            )
         }
+        // Trash only the revision this device saw: a newer one means another device changed the file.
+        val current = client.enumerateNodes(listOf(NodeUid(entry.id))).toList()
+            .filterIsInstance<FileNode>().firstOrNull { it.trashTime == null }
+            ?: return forget(entry)
+        if (current.activeRevision.uid.value != entry.version) throw RemoteChangedException(entry.path)
         val results = client.trashNodes(listOf(NodeUid(entry.id))).toList()
         results.filterIsInstance<NodeResultPair.Failure>().firstOrNull()?.let {
             throw IOException("Could not trash ${entry.path}: ${it.error.message}", it.error)

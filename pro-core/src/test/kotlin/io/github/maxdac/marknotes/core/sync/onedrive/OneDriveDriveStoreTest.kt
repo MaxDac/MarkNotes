@@ -1,6 +1,8 @@
 package io.github.maxdac.marknotes.core.sync.onedrive
 
 import io.github.maxdac.marknotes.core.sync.RemoteChangedException
+import io.github.maxdac.marknotes.core.sync.RemoteEntry
+import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
@@ -134,6 +136,7 @@ class OneDriveDriveStoreTest {
         assertEquals(edited, updated.modifiedMillis)
         val patch = requests.last()
         assertEquals("PATCH", patch.method)
+        assertEquals("e-c5", patch.getHeader("If-Match"))
         assertTrue(patch.body.readUtf8().contains("\"lastModifiedDateTime\":\"2024-05-01T10:00:00Z\""))
         // The PATCH changed the eTag: a later delete must use the new one.
         route("DELETE /v1.0/me/drive/items/n2", "", 204)
@@ -153,14 +156,221 @@ class OneDriveDriveStoreTest {
     }
 
     @Test
-    fun deletingAFolderIsUnconditionalAndAMissingItemIsAlreadyGone() = runTest {
+    fun caseOnlyFileRenameUsesStableIdentityIfMatchAndNoClobber() = runTest {
         val entries = store.snapshot().associateBy { it.path }
-        route("DELETE /v1.0/me/drive/items/f1", "", 204)
-        store.delete(entries.getValue("Work"))
-        assertNull(requests.last().getHeader("If-Match"))
+        route(
+            "PATCH /v1.0/me/drive/items/n1?@microsoft.graph.conflictBehavior=fail",
+            file("n1", "TODO.md", "root", "c1")
+        )
 
+        val renamed = store.rename(entries.getValue("Todo.md"), "TODO.md")
+
+        assertEquals("TODO.md", renamed.path)
+        assertEquals("n1", renamed.id)
+        assertEquals("c1", renamed.version)
+        assertEquals("e-c1", requests.last().getHeader("If-Match"))
+        assertEquals("""{"name":"TODO.md"}""", requests.last().body.readUtf8())
+        route("GET /v1.0/delta1", """{"value":[],"@odata.deltaLink":"$base/delta2"}""")
+        assertTrue(store.snapshot().any { it.path == "TODO.md" && it.id == "n1" })
+    }
+
+    @Test
+    fun aRacingEditPreventsAFileRename() = runTest {
+        val entry = store.snapshot().first { it.path == "Todo.md" }
+        route(
+            "PATCH /v1.0/me/drive/items/n1?@microsoft.graph.conflictBehavior=fail",
+            """{"error":{"message":"changed"}}""",
+            412
+        )
+
+        val error = runCatching { store.rename(entry, "TODO.md") }.exceptionOrNull()
+
+        assertTrue(error is RemoteChangedException)
+        assertEquals("e-c1", requests.last().getHeader("If-Match"))
+    }
+
+    @Test
+    fun aConflictingRenameDoesNotRetryWithAnOverwriteOrTemporaryName() = runTest {
+        val entry = store.snapshot().first { it.path == "Todo.md" }
+        route(
+            "PATCH /v1.0/me/drive/items/n1?@microsoft.graph.conflictBehavior=fail",
+            """{"error":{"message":"name conflict"}}""",
+            409
+        )
+        val before = requests.size
+
+        val error = runCatching { store.rename(entry, "TODO.md") }.exceptionOrNull()
+
+        assertTrue(error is GraphException && error.httpStatus == 409)
+        assertEquals(before + 1, requests.size)
+    }
+
+    @Test
+    fun aRenameWithoutTheSnapshotsIdentityAndVersionFailsBeforeMutation() = runTest {
+        val entry = store.snapshot().first { it.path == "Todo.md" }
+        val before = requests.size
+
+        val changed = runCatching { store.rename(entry.copy(version = "other"), "TODO.md") }.exceptionOrNull()
+        val missing = runCatching { store.rename(entry.copy(id = "missing"), "TODO.md") }.exceptionOrNull()
+
+        assertTrue(changed is RemoteChangedException)
+        assertTrue(missing is RemoteChangedException)
+        assertEquals(before, requests.size)
+    }
+
+    @Test
+    fun aRenameWithoutAnEtagFailsBeforeMutation() = runTest {
+        route(
+            "GET /v1.0/me/drive/items/root/children",
+            """{"value":[{"id":"n1","name":"Todo.md","file":{},"cTag":"c1"}]}"""
+        )
+        val entry = store.snapshot().single()
+        val before = requests.size
+
+        val error = runCatching { store.rename(entry, "TODO.md") }.exceptionOrNull()
+
+        assertTrue(error is RemoteChangedException)
+        assertEquals(before, requests.size)
+    }
+
+    @Test
+    fun aFolderRenameFailsWithoutATreeGuardOrProviderCall() = runTest {
+        val before = requests.size
+
+        val error = runCatching {
+            store.rename(RemoteEntry("Work", "folder", true, "", 0L), "WORK")
+        }.exceptionOrNull()
+
+        assertTrue(error is IOException)
+        assertEquals(before, requests.size)
+    }
+
+    @Test
+    fun deletingAFolderFailsWithoutSendingARecursiveDelete() = runTest {
+        val entries = store.snapshot().associateBy { it.path }
+        val before = requests.size
+
+        val error = runCatching { store.delete(entries.getValue("Work")) }.exceptionOrNull()
+
+        assertTrue(error is IOException)
+        assertTrue(error!!.message!!.contains("Safe empty-folder deletion"))
+        assertEquals(before, requests.size)
+    }
+
+    @Test
+    fun deletingAMissingFileIsAlreadyGone() = runTest {
+        val entries = store.snapshot().associateBy { it.path }
         store.delete(entries.getValue("Todo.md"))
         assertEquals("e-c1", requests.last().getHeader("If-Match"))
+    }
+
+    @Test
+    fun plannedFolderCreationRejectsAnExistingFolder() = runTest {
+        store.snapshot()
+        val before = requests.size
+
+        val error = runCatching { store.createFolder("Work") }.exceptionOrNull()
+
+        assertTrue(error is IOException)
+        assertEquals(before, requests.size)
+    }
+
+    @Test
+    fun plannedFolderCreationDoesNotAdoptAConcurrentFolder() = runTest {
+        store.snapshot()
+        route("POST /v1.0/me/drive/items/root/children", """{"error":{"message":"conflict"}}""", 409)
+        val before = requests.size
+
+        val error = runCatching { store.createFolder("New") }.exceptionOrNull()
+
+        assertTrue(error is GraphException && error.httpStatus == 409)
+        assertEquals(before + 1, requests.size)
+        assertTrue(requests.last().body.readUtf8().contains("\"@microsoft.graph.conflictBehavior\":\"fail\""))
+    }
+
+    @Test
+    fun plannedFolderCreationUsesExistingParentsButCreatesTheLeaf() = runTest {
+        store.snapshot()
+        route("POST /v1.0/me/drive/items/f1/children", folder("new", "New", "f1"), 201)
+
+        val created = store.createFolder("Work/New")
+
+        assertEquals("Work/New", created.path)
+        assertEquals("new", created.id)
+        assertTrue(requests.last().body.readUtf8().contains("\"name\":\"New\""))
+    }
+
+    @Test
+    fun newFileCreationDoesNotRetryAConflictAsAnOverwrite() = runTest {
+        store.snapshot()
+        route(
+            "PUT /v1.0/me/drive/items/root:/Todo.md:/content?@microsoft.graph.conflictBehavior=fail",
+            """{"error":{"message":"conflict"}}""",
+            409
+        )
+        val before = requests.size
+
+        val error = runCatching { store.uploadNew("Todo.md", "new".toByteArray(), 0L) }.exceptionOrNull()
+
+        assertTrue(error is GraphException && error.httpStatus == 409)
+        assertEquals(before + 1, requests.size)
+    }
+
+    @Test
+    fun aFailedModificationTimeWriteIsAnError() = runTest {
+        val entries = store.snapshot().associateBy { it.path }
+        route("PUT /v1.0/me/drive/items/n2/content", file("n2", "Plan.md", "f1", "c5"))
+        route("PATCH /v1.0/me/drive/items/n2", """{"error":{"message":"timestamp failed"}}""", 503)
+
+        val error = runCatching {
+            store.uploadRevision(entries.getValue("Work/Plan.md"), "new".toByteArray(), 1234L)
+        }.exceptionOrNull()
+
+        assertTrue(error is GraphException && error.httpStatus == 503)
+    }
+
+    @Test
+    fun aNewConflictCopyWithAnUnstoredEditTimeIsNotReportedAsSuccessful() = runTest {
+        store.snapshot()
+        route(
+            "PUT /v1.0/me/drive/items/root:/Copy.md:/content?@microsoft.graph.conflictBehavior=fail",
+            file("copy", "Copy.md", "root", "c-copy")
+        )
+        route("PATCH /v1.0/me/drive/items/copy", """{"error":{"message":"timestamp failed"}}""", 503)
+
+        val error = runCatching { store.uploadNew("Copy.md", "losing note".toByteArray(), 1234L) }.exceptionOrNull()
+
+        assertTrue(error is GraphException && error.httpStatus == 503)
+        assertEquals("PATCH", requests.last().method)
+    }
+
+    @Test
+    fun aSuccessfulResponseWithTheWrongModificationTimeIsAnError() = runTest {
+        val entry = store.snapshot().first { it.path == "Todo.md" }
+        route("PUT /v1.0/me/drive/items/n1/content", file("n1", "Todo.md", "root", "c2"))
+        route("PATCH /v1.0/me/drive/items/n1", file("n1", "Todo.md", "root", "c2"))
+
+        val error = runCatching { store.uploadRevision(entry, "new".toByteArray(), 1234L) }.exceptionOrNull()
+
+        assertTrue(error is IOException)
+        assertTrue(error!!.message!!.contains("did not preserve the edit time"))
+    }
+
+    @Test
+    fun mutationsWithoutAnEtagDoNotFallBackToUnconditionalRequests() = runTest {
+        route(
+            "GET /v1.0/me/drive/items/root/children",
+            """{"value":[{"id":"n1","name":"Todo.md","file":{},"cTag":"c1"}]}"""
+        )
+        val entry = store.snapshot().single()
+        val before = requests.size
+
+        val upload = runCatching { store.uploadRevision(entry, "new".toByteArray(), 0L) }.exceptionOrNull()
+        val delete = runCatching { store.delete(entry) }.exceptionOrNull()
+
+        assertTrue(upload is IOException)
+        assertTrue(delete is IOException)
+        assertEquals(before, requests.size)
     }
 
     @Test
