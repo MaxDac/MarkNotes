@@ -4,6 +4,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.maxdac.marknotes.ui.login.THIRD_PARTY_DISCLAIMER
@@ -38,7 +39,7 @@ class ProProvidersTest {
         compose.onNodeWithText(NO_DRIVES_TEXT).assertExists()
         compose.onNodeWithText(THIRD_PARTY_DISCLAIMER).assertExists()
 
-        compose.onNodeWithText("Add drive").performClick()
+        compose.onNodeWithText("Add drive").performScrollTo().performClick()
         compose.onNodeWithText("Proton Drive").assertExists()
         compose.onNodeWithText("Dropbox").assertExists()
         compose.onNodeWithText("OneDrive").assertExists()
