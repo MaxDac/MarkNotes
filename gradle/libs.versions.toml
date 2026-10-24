@@ -4,7 +4,7 @@
 [versions]
 okhttp = "5.5.0"
 bcrypt = "0.10.2"
-msal = "8.5.0"
+msal = "8.6.0"
 # Proton Drive SDK (Kotlin bindings over the C# SDK). Only used by :proton-drive.
 protonDriveSdk = "0.31.1"
 # Proton core libraries the SDK is built against (network stack for its ApiProvider, OpenPGP for address keys).
