@@ -130,7 +130,9 @@ fun LoginScreen(proton: ProtonConnector, onLoggedIn: () -> Unit, onBack: () -> U
                 Text(it, color = MaterialTheme.colorScheme.error)
             }
             Text(
-                "Your password is only used to sign in and is never stored. " +
+                "Your password is only used to sign in and is never stored. To sync without asking for it " +
+                    "again, your session and the keys that decrypt your drive are kept on this device, " +
+                    "encrypted with a key held in the Android Keystore. " +
                     "CAPTCHA / human verification is not supported in this version.",
                 style = MaterialTheme.typography.bodySmall
             )

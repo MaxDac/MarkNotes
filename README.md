@@ -252,6 +252,12 @@ MarkNotes follows Proton's rules for third-party personal projects:
 ## Security notes
 
 - The password is only used to compute the SRP proof and key passphrases. It is never stored.
+- To sync without asking for the password again, the Proton session (access and refresh tokens) and the key
+  passphrases that unlock the drive's private keys are stored on the device, AES-GCM encrypted with a key held
+  in the Android Keystore. The Proton Drive SDK also keeps a metadata cache (`cache.sqlite`) in the app's
+  private cache directory. App backups are disabled.
+- Release builds only forward the SDK's warnings and errors to logcat, without their messages (which can
+  contain file names, paths or account IDs); debuggable builds log them in full.
 - The SRP modulus is extracted from Proton's PGP-signed message, but **the signature isn't verified
   yet**. That is acceptable for a personal project, but it should be added before wider use.
 - Accounts with a separate mailbox password (two-password mode) and FIDO2-only 2FA are not supported in v1.
