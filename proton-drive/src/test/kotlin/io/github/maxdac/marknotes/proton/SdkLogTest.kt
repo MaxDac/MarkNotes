@@ -1,36 +1,35 @@
 package io.github.maxdac.marknotes.proton
 
 import android.util.Log
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import me.proton.drive.sdk.LoggerProvider
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SdkLogTest {
-    private val secret = "uploaded /Notes/diary.md for user abc123"
+    private val events = mutableListOf<Pair<DiagnosticCode, Throwable?>>()
+    private val diagnostics = DiagnosticReporter { code, failure -> events += code to failure }
 
     @Test
-    fun debugBuildsLogInfoAndAboveWithTheMessage() {
-        assertNull(sdkLogLine(LoggerProvider.Level.DEBUG, "cat", secret, verbose = true))
-        assertEquals(
-            SdkLogLine(Log.INFO, "[cat] $secret"),
-            sdkLogLine(LoggerProvider.Level.INFO, "cat", secret, verbose = true)
-        )
-        assertEquals(Log.ERROR, sdkLogLine(LoggerProvider.Level.ERROR, "cat", secret, verbose = true)?.priority)
+    fun ignoresNonFailureEvents() {
+        assertNull(sdkLogLine(LoggerProvider.Level.VERBOSE, diagnostics))
+        assertNull(sdkLogLine(LoggerProvider.Level.DEBUG, diagnostics))
+        assertNull(sdkLogLine(LoggerProvider.Level.INFO, diagnostics))
+        assertEquals(emptyList<Pair<DiagnosticCode, Throwable?>>(), events)
     }
 
     @Test
-    fun releaseBuildsLogOnlyWarningsAndErrorsWithoutTheMessage() {
-        assertNull(sdkLogLine(LoggerProvider.Level.VERBOSE, "cat", secret, verbose = false))
-        assertNull(sdkLogLine(LoggerProvider.Level.INFO, "cat", secret, verbose = false))
-        val warn = sdkLogLine(LoggerProvider.Level.WARN, "cat", secret, verbose = false)
-        val error = sdkLogLine(LoggerProvider.Level.ERROR, "cat", secret, verbose = false)
-        assertEquals(Log.WARN, warn?.priority)
-        assertEquals(Log.ERROR, error?.priority)
-        listOf(warn, error).forEach { line ->
-            assertFalse(line!!.text.contains("diary"))
-            assertFalse(line.text.contains("abc123"))
-        }
+    fun emitsOnlyFixedTextForWarningsAndErrorsInEveryBuild() {
+        assertEquals(
+            SdkLogLine(Log.WARN, "Proton Drive SDK WARN (details omitted)"),
+            sdkLogLine(LoggerProvider.Level.WARN, diagnostics)
+        )
+        assertEquals(
+            SdkLogLine(Log.ERROR, "Proton Drive SDK ERROR (details omitted)"),
+            sdkLogLine(LoggerProvider.Level.ERROR, diagnostics)
+        )
+        assertEquals(listOf(DiagnosticCode.SDK_ERROR to null, DiagnosticCode.SDK_ERROR to null), events)
     }
 }

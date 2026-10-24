@@ -3,10 +3,15 @@ package io.github.maxdac.marknotes.auth
 import android.content.Context
 import io.github.maxdac.marknotes.core.auth.ProtonSession
 import io.github.maxdac.marknotes.core.auth.SessionStorage
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 
 /** Stores the Proton session in SharedPreferences, encrypted with [KeystoreCrypto]. */
-class KeystoreSessionStorage(context: Context, private val crypto: KeystoreCrypto = KeystoreCrypto()) :
-    SessionStorage {
+class KeystoreSessionStorage(
+    context: Context,
+    private val crypto: KeystoreCrypto = KeystoreCrypto(),
+    private val diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
+) : SessionStorage {
     private val prefs = context.getSharedPreferences("session", Context.MODE_PRIVATE)
 
     override fun load(): ProtonSession? {
@@ -18,7 +23,10 @@ class KeystoreSessionStorage(context: Context, private val crypto: KeystoreCrypt
                 null
             }
         }
-        if (session == null) clear()
+        if (session == null) {
+            diagnostics.report(DiagnosticCode.AUTHENTICATION, null)
+            clear()
+        }
         return session
     }
 

@@ -1,9 +1,9 @@
 package io.github.maxdac.marknotes.proton
 
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.util.Log
 import io.github.maxdac.marknotes.core.auth.ProtonAuthClient
+import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import io.github.maxdac.marknotes.core.sync.ProtonSessionSource
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStore
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStoreFactory
@@ -28,11 +28,10 @@ import me.proton.drive.sdk.entity.ClientCreateRequest
 class ProtonDriveStoreFactory(
     context: Context,
     baseUrl: String = ProtonAuthClient.DEFAULT_BASE_URL,
-    private val appVersion: String = ProtonAuthClient.APP_VERSION
+    private val appVersion: String = ProtonAuthClient.APP_VERSION,
+    private val diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
 ) : RemoteDriveStoreFactory {
     private val context = context.applicationContext
-
-    private val verboseLogging = this.context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     // Both the SDK and Retrofit resolve relative paths, so the base URL must end with '/'.
     private val baseUrl = baseUrl.trimEnd('/') + "/"
@@ -42,7 +41,7 @@ class ProtonDriveStoreFactory(
         val userId = UserId(session.userIdOrUid)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         try {
-            val bridge = ProtonSessionBridge(sessions)
+            val bridge = ProtonSessionBridge(sessions, diagnostics)
             val apiProvider = createApiProvider(context, baseUrl, appVersion, bridge, scope)
             val keys = ProtonAddressKeys(apiProvider, sessions, userId, GOpenPGPCrypto())
             val client = ProtonDriveSdk.protonDriveClientCreate(
@@ -51,7 +50,7 @@ class ProtonDriveStoreFactory(
                 apiProvider = apiProvider,
                 request = ClientCreateRequest(
                     baseUrl = baseUrl,
-                    loggerProvider = ProtonDriveSdk.loggerProvider(::log),
+                    loggerProvider = ProtonDriveSdk.loggerProvider { level, _, _ -> log(level) },
                     // SQLite database for the SDK's node/metadata cache.
                     cachePath = cacheDir(context).apply { mkdirs() }.resolve("cache.sqlite").absolutePath
                 ),
@@ -74,8 +73,8 @@ class ProtonDriveStoreFactory(
         }
     }
 
-    private fun log(level: LoggerProvider.Level, category: String, message: String) {
-        val line = sdkLogLine(level, category, message, verboseLogging) ?: return
+    private fun log(level: LoggerProvider.Level) {
+        val line = sdkLogLine(level, diagnostics) ?: return
         Log.println(line.priority, TAG, line.text)
     }
 

@@ -79,6 +79,17 @@ app itself lives in [MaxDac/marknotes-android](https://github.com/MaxDac/marknot
   notes, images, sync state and cached files stored on this device, including the Proton session and SDK cache
   and the Microsoft (MSAL) accounts and tokens. When you disconnect the last drive you can also tick **Also
   delete the notes stored on this device**. Nothing is ever deleted from a drive.
+- **Local error diagnostics**: enabled by default for managed Java/Kotlin crashes and handled failures, including
+  Pro sign-in and provider errors. Native crashes and ANRs are not captured. Only fixed error codes and safe
+  structural metadata are retained, never exception messages, SDK categories, credentials, account identifiers,
+  note contents, paths or URLs, in debug or release builds. Local logs and export snapshots together are limited
+  to **7 days and 5,242,880 bytes**; **Clear logs** removes them, and future errors can still be recorded.
+  **Report an issue** previews a recent sanitized excerpt before opening a draft in
+  [MaxDac/MarkNotes](https://github.com/MaxDac/MarkNotes/issues). Confirming the browser handoff sends that excerpt
+  to GitHub in the URL and may retain it in browser history; submitting the issue makes it public. Nothing is
+  submitted automatically, and the app does not authenticate to GitHub or post through its API. The encoded URL
+  is limited to 2,000 ASCII characters, with whole events omitted when necessary. Full sanitized log export via
+  Android's share sheet is available separately without GitHub or an internet connection. Logs are not synced.
 
 The on-disk note format (IDs, note links, images, chord sequences) is shared with the desktop and web apps and described in
 [marknotes-spec](https://github.com/MaxDac/marknotes-spec/blob/main/note-format.md), checked out at `libre/spec/` as a
@@ -286,6 +297,23 @@ License, or (at your option) any later version (GPL-3.0-or-later). It is distrib
 
 The license above covers this project's own code. Third-party dependencies remain under their own
 licenses.
+
+### Diagnostics and F-Droid compatibility
+
+Diagnostics use the shared libre implementation and existing Android/AndroidX APIs, without a proprietary
+crash-reporting SDK, new service, new permission or automatic upload. Default-on local collection is separate
+from explicit opt-in browser transmission and file sharing. **Clear logs** and offline export remain available
+without GitHub; a browser draft may require the user's GitHub login before submission. Any F-Droid packaging
+review must also consider promotion of GitHub and other network services under its anti-feature policy.
+
+This feature design is not a claim that the entire Pro app has F-Droid approval or a verified F-Droid build.
+Pro is distributed on GitHub only. Its existing MSAL dependency brings in Google Play Services authentication
+and FIDO libraries through Microsoft common and AndroidX credentials-play-services-auth; that dependency graph
+is not eligible for F-Droid as-is. Additional packaging questions include the Proton SDK's prebuilt NativeAOT
+libraries and transitive dependencies, the custom Microsoft Maven feed, shared native sync artifacts, and
+complete source-build provenance/toolchain recipes. Provider registration values and MSAL's signing-certificate
+binding also need an appropriate public build configuration for any independent distributor. These are
+separate from local diagnostics; this change does not establish their eligibility or replace an F-Droid audit.
 
 The Proton Drive SDK and protoncore libraries are GPLv3, which the GPL-3.0-or-later license is compatible with. The
 SRP implementation in `:pro-core` was written for this project, following the public protocol as
