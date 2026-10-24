@@ -26,3 +26,17 @@ runs:
         sdkmanager="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
         yes | "$sdkmanager" --licenses > /dev/null || true
         "$sdkmanager" --install "platforms;android-37.0" > /dev/null
+
+    - name: Initialize the pinned sync source
+      if: hashFiles('libre/gradle/marknotes-sync-source.properties') != ''
+      shell: bash
+      run: git submodule update --init --recursive libre
+
+    - name: Set up the sync source toolchain
+      if: hashFiles('libre/gradle/marknotes-sync-source.properties') != ''
+      uses: ./libre/.github/actions/setup-sync-toolchain
+
+    - name: Build the pinned sync source artifacts
+      if: hashFiles('libre/gradle/marknotes-sync-source.properties') != ''
+      shell: bash
+      run: libre/scripts/build-sync-from-source.sh

@@ -44,8 +44,8 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup-android-build
       - name: Run unit tests
-        # :core is a plain JVM module, so its tests run under `test` rather than `testDebugUnitTest`.
-        run: ./gradlew testDebugUnitTest :core:test --continue
+        # Both plain JVM modules use `test`, not `testDebugUnitTest` (including the OneDrive adapter tests).
+        run: ./gradlew testDebugUnitTest :core:test :pro-core:test --continue
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v7

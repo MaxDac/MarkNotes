@@ -52,13 +52,19 @@ without cloning, for example
 Requirements: JDK 21+ (Android Studio's JBR works) and the Android SDK with platform 37. On Windows use
 `.\gradlew.bat` and set `JAVA_HOME`/`ANDROID_HOME` if they aren't set.
 
+If `libre/gradle/marknotes-sync-source.properties` exists, build the pinned sync artifacts before Gradle:
+on Linux run `libre/scripts/build-sync-from-source.sh` with the toolchain from
+`libre/.github/actions/setup-sync-toolchain`. CI installs that toolchain and builds the exact source pin.
+See `docs/cloud-providers.md`, "Development sync source builds". Do not substitute older artifacts or publish
+a speculative release; signed release validation rejects development source pins.
+
 These mirror the required CI checks in `.github/workflows/checks.yml` (do not rename the jobs: the `main`
 ruleset requires them by name). They cover the shared modules from `libre/` too:
 
 | CI check | Command |
 | --- | --- |
 | Checks / Lint (ktlint, detekt, Android Lint) | `./gradlew ktlintCheck detekt lintDebug --continue` (`ktlintFormat` auto-fixes style) |
-| Checks / Unit tests | `./gradlew testDebugUnitTest :core:test --continue` |
+| Checks / Unit tests | `./gradlew testDebugUnitTest :core:test :pro-core:test --continue` |
 | Checks / Instrumented tests (emulator) | `./gradlew :app:connectedDebugAndroidTest` (needs a running emulator/device) |
 | Checks / Build debug APK | `./gradlew assembleDebug` |
 | Checks / Parity (marknotes-spec fixtures) | `./gradlew :core:parityTest :app-shared:testDebugUnitTest --tests 'io.github.maxdac.marknotes.parity.*' -Pmarknotes.parity.required=true` (needs `libre/spec`) |

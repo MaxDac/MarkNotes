@@ -141,6 +141,48 @@ Proton Drive needs no app registration and no secrets on Android, web or desktop
 - **Login screen** shows "This is a third-party application not officially supported by Proton."
 - **No Proton branding** (logos or similar) anywhere in the apps.
 
+## Sync mutation safety
+
+New synced files and planned folders must be created without replacing or adopting an existing entry. A name
+conflict is a sync error, including when another device creates the entry after the listing.
+
+Shared local case-only renames use kernel-enforced no-replace operations, not a destination existence check
+followed by a potentially replacing move. Conflict copies are written privately with the losing edit time
+(including epoch zero) and flushed before atomic no-replace publication. Durable recovery verifies and reuses
+the same conflict-copy path and note ID after a crash; a racing edited destination is never overwritten.
+
+OneDrive and Proton Drive folder deletion is deliberately unsupported: their recursive delete/trash operations
+cannot atomically guarantee that a folder has no unseen children. Sync reports an error and keeps the folder's
+records for a later retry; it never falls back to recursive deletion. Files can still be synced individually.
+If OneDrive cannot store the supplied edit time after an upload, that step is reported as an error rather than
+recording a successful sync with the wrong modification time.
+
+OneDrive file case-only renames use the stable item ID, the listing's eTag in
+[`If-Match`](https://learn.microsoft.com/en-us/graph/api/driveitem-update?view=graph-rest-1.0#request-headers), and
+[`@microsoft.graph.conflictBehavior=fail`](https://learn.microsoft.com/en-us/graph/api/resources/driveitem?view=graph-rest-1.0#instance-attributes):
+a racing edit or name conflict fails without replacing another file.
+The same conditional update preserves the file's edit time; an unexpected identity or timestamp is an error.
+Remote folder case-only renames and Proton Drive remote renames report an unsupported-operation error rather
+than moving entries without a conditional identity/content guarantee.
+
+## Development sync source builds
+
+When `libre/gradle/marknotes-sync-source.properties` exists, Gradle resolves the Kotlin bindings, host-native jar
+and Android AAR from `libre/marknotes-sync/bindings/kotlin/build/libs`, not an unpublished GitHub release URL.
+Initialize the submodules and, on Linux with the toolchain from
+`libre/.github/actions/setup-sync-toolchain`, build the pinned source before running the Android Gradle commands:
+
+```sh
+git submodule update --init --recursive libre
+libre/scripts/build-sync-from-source.sh
+```
+
+The shared script verifies the source commit and catalog version. CI performs these steps in
+`.github/actions/setup-android-build`; no generated bindings or native binaries are committed here.
+`-Pmarknotes.sync.fromSource=<checkout>` selects artifacts from an explicit source checkout instead.
+Release validation rejects a development source pin: remove it only when the reviewed matching artifacts have
+actually been published.
+
 ## 7. Release builds
 
 `.github/workflows/release.yml` reads these repository secrets. If any are missing, the release APK shows the
