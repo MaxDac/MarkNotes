@@ -58,7 +58,7 @@ ruleset requires them by name). They cover the shared modules from `libre/` too:
 | CI check | Command |
 | --- | --- |
 | Checks / Lint (ktlint, detekt, Android Lint) | `./gradlew ktlintCheck detekt lintDebug --continue` (`ktlintFormat` auto-fixes style) |
-| Checks / Unit tests | `./gradlew testDebugUnitTest :core:test --continue` |
+| Checks / Unit tests | `./gradlew testDebugUnitTest :core:test :pro-core:test --continue` |
 | Checks / Instrumented tests (emulator) | `./gradlew :app:connectedDebugAndroidTest` (needs a running emulator/device) |
 | Checks / Build debug APK | `./gradlew assembleDebug` |
 | Checks / Parity (marknotes-spec fixtures) | `./gradlew :core:parityTest :app-shared:testDebugUnitTest --tests 'io.github.maxdac.marknotes.parity.*' -Pmarknotes.parity.required=true` (needs `libre/spec`) |

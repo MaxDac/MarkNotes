@@ -15,7 +15,7 @@ attachments, sync manifest, merge/conflicts) or the features.md matrix? See AGEN
 
 ## Checklist
 
-- [ ] `./gradlew ktlintCheck detekt lintDebug testDebugUnitTest :core:test assembleDebug` passes locally
+- [ ] `./gradlew ktlintCheck detekt lintDebug testDebugUnitTest :core:test :pro-core:test assembleDebug` passes locally
 - [ ] Parity tests pass (`./gradlew :core:parityTest` + `:app-shared` `MentionParityTest`, see AGENTS.md) (when shared behaviour or `libre/` changed)
 - [ ] Sync changes are covered by `SyncEngineTest` (against `FakeRemoteDriveStore`)
 - [ ] UI changes tested on an emulator/device (`./gradlew :app:connectedDebugAndroidTest`)
