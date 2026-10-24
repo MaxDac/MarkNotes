@@ -5,6 +5,7 @@ import io.github.maxdac.marknotes.core.notes.NotePaths
 import io.github.maxdac.marknotes.core.sync.RemoteChangedException
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStore
 import io.github.maxdac.marknotes.core.sync.RemoteEntry
+import io.github.maxdac.marknotes.core.sync.UnsupportedRemoteOperationException
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -141,7 +142,7 @@ class ProtonDriveStore(
 
     override suspend fun delete(entry: RemoteEntry) {
         if (entry.isFolder) {
-            throw IOException(
+            throw UnsupportedRemoteOperationException(
                 "Safe empty-folder deletion is not supported by Proton Drive: ${entry.path}"
             )
         }

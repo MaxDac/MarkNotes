@@ -7,6 +7,7 @@ import io.github.maxdac.marknotes.core.sync.RemoteEntry
 import io.github.maxdac.marknotes.core.sync.RemoteFolder
 import io.github.maxdac.marknotes.core.sync.RemoteFolderBrowser
 import io.github.maxdac.marknotes.core.sync.SyncManifest
+import io.github.maxdac.marknotes.core.sync.UnsupportedRemoteOperationException
 import java.io.IOException
 import java.net.URLEncoder
 import java.time.Instant
@@ -230,7 +231,11 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
     }
 
     override suspend fun delete(entry: RemoteEntry) {
-        if (entry.isFolder) throw IOException("Safe empty-folder deletion is not supported by OneDrive: ${entry.path}")
+        if (entry.isFolder) {
+            throw UnsupportedRemoteOperationException(
+                "Safe empty-folder deletion is not supported by OneDrive: ${entry.path}"
+            )
+        }
         val headers = ifMatch(entry.id)
         try {
             graph.send("DELETE", graph.itemUrl(entry.id), headers = headers)
@@ -242,13 +247,20 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
     }
 
     @Suppress("ThrowsCount")
-    suspend fun rename(entry: RemoteEntry, toPath: String): RemoteEntry {
-        if (entry.isFolder) throw IOException("Safe folder rename is not supported by OneDrive: ${entry.path}")
+    override suspend fun rename(entry: RemoteEntry, toPath: String): RemoteEntry {
+        if (entry.isFolder) {
+            throw UnsupportedRemoteOperationException("Safe folder rename is not supported by OneDrive: ${entry.path}")
+        }
         val target = NotePaths.normalize(toPath)
         require(NotePaths.parent(entry.path) == NotePaths.parent(target)) { "A rename cannot change the parent folder" }
         val cached = byId[entry.id]
         if (cached == null || cached.entry != entry || cached.eTag.isEmpty()) throw RemoteChangedException(entry.path)
-        val body = buildJsonObject { put("name", NotePaths.name(target)) }
+        val body = buildJsonObject {
+            put("name", NotePaths.name(target))
+            putJsonObject("fileSystemInfo") {
+                put("lastModifiedDateTime", Instant.ofEpochMilli(entry.modifiedMillis).toString())
+            }
+        }
         val item = try {
             graph.patchJson(
                 graph.itemUrl(entry.id) + "?@microsoft.graph.conflictBehavior=fail",
@@ -264,7 +276,11 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
         if (!sameFile) {
             throw IOException("OneDrive returned an unexpected renamed file: ${entry.path}")
         }
-        return remember(item, target)
+        val renamed = remember(item, target)
+        if (renamed.modifiedMillis != entry.modifiedMillis) {
+            throw IOException("OneDrive did not preserve the edit time during rename: ${entry.path}")
+        }
+        return renamed
     }
 
     override suspend fun readManifest(): ByteArray? = try {

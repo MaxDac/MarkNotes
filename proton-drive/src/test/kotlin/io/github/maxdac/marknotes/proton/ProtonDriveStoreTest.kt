@@ -1,6 +1,7 @@
 package io.github.maxdac.marknotes.proton
 
 import io.github.maxdac.marknotes.core.sync.RemoteEntry
+import io.github.maxdac.marknotes.core.sync.UnsupportedRemoteOperationException
 import java.io.IOException
 import java.lang.reflect.Proxy
 import java.time.Instant
@@ -78,8 +79,23 @@ class ProtonDriveStoreTest {
 
         val error = runCatching { store.delete(RemoteEntry("Work", "folder", true, "", 0L)) }.exceptionOrNull()
 
-        assertTrue(error is IOException)
+        assertTrue(error is UnsupportedRemoteOperationException)
         assertTrue(error!!.message!!.contains("Safe empty-folder deletion"))
+        assertEquals(0, sdk.calls)
+    }
+
+    @Test
+    fun unsupportedSafeDeletionAndRenameFailBeforeAnySdkCall() = runTest {
+        val sdk = FakeClient()
+        val store = ProtonDriveStore(sdk.client, "MarkNotes")
+        val folder = RemoteEntry("Work", "folder", true, "", 0L)
+        val file = RemoteEntry("Note.md", "file", false, "revision", 0L)
+
+        val deletion = runCatching { store.deleteFolderIfEmpty(folder) }.exceptionOrNull()
+        val rename = runCatching { store.rename(file, "NOTE.md") }.exceptionOrNull()
+
+        assertTrue(deletion is UnsupportedRemoteOperationException)
+        assertTrue(rename is UnsupportedRemoteOperationException)
         assertEquals(0, sdk.calls)
     }
 

@@ -154,6 +154,7 @@ recording a successful sync with the wrong modification time.
 
 OneDrive file case-only renames use the stable item ID, the listing's eTag in `If-Match`, and
 `@microsoft.graph.conflictBehavior=fail`: a racing edit or name conflict fails without replacing another file.
+The same conditional update preserves the file's edit time; an unexpected identity or timestamp is an error.
 Remote folder case-only renames and Proton Drive remote renames report an unsupported-operation error rather
 than moving entries without a conditional identity/content guarantee.
 
