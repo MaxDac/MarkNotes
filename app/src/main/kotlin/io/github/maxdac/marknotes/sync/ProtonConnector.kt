@@ -19,11 +19,15 @@ import io.github.maxdac.marknotes.data.MarkNotesDatabase
 import io.github.maxdac.marknotes.proton.ProtonDriveStoreFactory
 import io.github.maxdac.marknotes.ui.login.LoginScreen
 import io.github.maxdac.marknotes.ui.login.THIRD_PARTY_DISCLAIMER
+import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * Proton Drive, through the Proton Drive SDK (:proton-drive). Sign-in goes through the in-app login
@@ -34,11 +38,22 @@ import kotlinx.coroutines.sync.withLock
  * API answers 401, so the stored session stays the only copy of the tokens.
  */
 class ProtonConnector(
-    context: Context,
     private val sessionStorage: SessionStorage,
     val authClient: ProtonAuthClient,
-    private val factory: RemoteDriveStoreFactory = ProtonDriveStoreFactory(context)
+    private val factory: RemoteDriveStoreFactory,
+    /** The SDK's cache ([ProtonDriveStoreFactory.cacheDir]), deleted with the session. */
+    private val cacheDir: File,
+    override val unavailableReason: String? = null
 ) : DriveConnector, ProtonSessionSource {
+    constructor(context: Context, sessionStorage: SessionStorage, authClient: ProtonAuthClient) : this(
+        sessionStorage = sessionStorage,
+        authClient = authClient,
+        factory = ProtonDriveStoreFactory(context),
+        cacheDir = ProtonDriveStoreFactory.cacheDir(context),
+        // The SDK ships native libraries for 64-bit ABIs only.
+        unavailableReason = if (Build.SUPPORTED_64_BIT_ABIS.isEmpty()) "Proton Drive needs a 64-bit device." else null
+    )
+
     override val provider = DriveProvider.PROTON
 
     private val storeLock = Mutex()
@@ -52,10 +67,6 @@ class ProtonConnector(
 
     private val _session = MutableStateFlow(sessionStorage.load())
     val session: StateFlow<ProtonSession?> = _session
-
-    // The SDK ships native libraries for 64-bit ABIs only.
-    override val unavailableReason: String? =
-        if (Build.SUPPORTED_64_BIT_ABIS.isEmpty()) "Proton Drive needs a 64-bit device." else null
 
     override val current: ProtonSession?
         get() = _session.value
@@ -107,15 +118,39 @@ class ProtonConnector(
     }
 
     override suspend fun signOut(accountId: String) {
+        logOut()
+        deleteSessionData()
+    }
+
+    /** Same as [signOut], but fails when the SDK cache could not be deleted. */
+    override suspend fun deleteLocalData() {
+        logOut()
+        if (!deleteSessionData()) throw IOException("Could not delete the Proton Drive cache")
+    }
+
+    /** Revokes the session on Proton's side, best effort: the local session is dropped regardless. */
+    private suspend fun logOut() {
         val session = _session.value ?: return
         try {
             authClient.logout(session)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // The local session is dropped regardless.
+            // Dropped locally anyway; the server expires it on its own.
         }
+    }
+
+    /**
+     * Forgets the session, closes the SDK clients and deletes their cache. Holds [storeLock] so no store is created
+     * meanwhile, and closes the stores first so the SDK no longer uses the cache database. Returns whether the cache
+     * is gone.
+     */
+    private suspend fun deleteSessionData(): Boolean {
         clearSession()
+        return storeLock.withLock {
+            closeRetiredStores()
+            withContext(Dispatchers.IO) { cacheDir.deleteRecursively() || !cacheDir.exists() }
+        }
     }
 
     /** Refreshes the tokens unless another caller already did, dropping the session when they're revoked. */

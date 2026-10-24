@@ -53,8 +53,7 @@ class ProtonDriveStoreFactory(
                     baseUrl = baseUrl,
                     loggerProvider = ProtonDriveSdk.loggerProvider(::log),
                     // SQLite database for the SDK's node/metadata cache.
-                    cachePath = File(context.cacheDir, "proton-drive").apply { mkdirs() }
-                        .resolve("cache.sqlite").absolutePath
+                    cachePath = cacheDir(context).apply { mkdirs() }.resolve("cache.sqlite").absolutePath
                 ),
                 userAddressResolver = keys,
                 publicAddressResolver = keys
@@ -80,7 +79,14 @@ class ProtonDriveStoreFactory(
         Log.println(line.priority, TAG, line.text)
     }
 
-    private companion object {
-        const val TAG = "ProtonDriveSdk"
+    companion object {
+        private const val TAG = "ProtonDriveSdk"
+        private const val CACHE_DIR = "proton-drive"
+
+        /**
+         * The SDK's node/metadata cache (`cache.sqlite` with its `-wal`/`-shm` files). It belongs to the
+         * signed-in session: delete it on sign-out, once the stores using it are closed.
+         */
+        fun cacheDir(context: Context): File = File(context.cacheDir, CACHE_DIR)
     }
 }

@@ -73,7 +73,12 @@ app itself lives in [MaxDac/marknotes-android](https://github.com/MaxDac/marknot
   verification is not supported: you get a clear error instead.
 - **Dropbox / OneDrive login**: the official Dropbox SDK (OAuth 2 PKCE) and Microsoft MSAL.
 - Sessions and tokens are stored encrypted with an Android Keystore AES-GCM key. Disconnecting a drive
-  signs you out, and revokes the session where the provider supports it.
+  signs you out, and revokes the session where the provider supports it; disconnecting Proton Drive also deletes
+  the Proton Drive SDK cache.
+- **Delete local data** (Settings → Privacy): **Delete all local data** disconnects every drive, then deletes the
+  notes, images, sync state and cached files stored on this device, including the Proton session and SDK cache
+  and the Microsoft (MSAL) accounts and tokens. When you disconnect the last drive you can also tick **Also
+  delete the notes stored on this device**. Nothing is ever deleted from a drive.
 
 The on-disk note format (IDs, note links, images, chord sequences) is shared with the desktop and web apps and described in
 [marknotes-spec](https://github.com/MaxDac/marknotes-spec/blob/main/note-format.md), checked out at `libre/spec/` as a
@@ -257,7 +262,8 @@ MarkNotes follows Proton's rules for third-party personal projects:
 - To sync without asking for the password again, the Proton session (access and refresh tokens) and the key
   passphrases that unlock the drive's private keys are stored on the device, AES-GCM encrypted with a key held
   in the Android Keystore. The Proton Drive SDK also keeps a metadata cache (`cache.sqlite`) in the app's
-  private cache directory. App backups are disabled.
+  private cache directory. Disconnecting Proton Drive or deleting all local data deletes the session and the
+  cache. App backups are disabled.
 - Release builds only forward the SDK's warnings and errors to logcat, without their messages (which can
   contain file names, paths or account IDs); debuggable builds log them in full.
 - The SRP modulus is extracted from Proton's PGP-signed message, but **the signature isn't verified
