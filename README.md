@@ -36,10 +36,12 @@ app itself lives in [MaxDac/marknotes-android](https://github.com/MaxDac/marknot
   converts headings, lists, emphasis, links, tables and code; turn it off to keep the text as it is. Shared
   images and images inside `.docx` files are stored as attachments; web images stay links. Conversion runs on
   the device.
-- **Chord sequences** (guitar and bass, ported from [ChordBuilder](https://github.com/MaxDac/ChordBuilder)): the
+- **Chord sequences** (guitar and bass, ported from [ChordBuilder](https://github.com/MaxDac/ChordBuilder)), off by
+  default: turn on Settings → **Chord sequences** (stored on this device only, not synced). When on, the
   browser's **New chord sequence** action (in the floating **New** menu, next to **New note**, and on the
   empty-folder screen) creates a note with `type: chords` in its front-matter, shown with a
-  music icon. It opens in a chord editor instead of the markdown editor: an ordered list of chords with small
+  music icon. When off, opening a chord sequence (for example one created on another device) asks whether to
+  turn chord sequences on: **Yes** enables the setting and opens the note, **No** leaves the note closed. It opens in a chord editor instead of the markdown editor: an ordered list of chords with small
   diagrams (add, edit, duplicate, move, delete) and a builder with a horizontally scrollable fretboard (guitar
   frets 1–24; bass frets 9–24 with a red line after the 12th), finger selection, tags and a note. Each chord
   needs at least three non-muted strings; chords with the same name and instrument are numbered (`1 C`, `2 C`).
