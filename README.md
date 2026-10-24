@@ -71,7 +71,12 @@ app itself lives in [MaxDac/marknotes-android](https://github.com/MaxDac/marknot
   verification is not supported: you get a clear error instead.
 - **Dropbox / OneDrive login**: the official Dropbox SDK (OAuth 2 PKCE) and Microsoft MSAL.
 - Sessions and tokens are stored encrypted with an Android Keystore AES-GCM key. Disconnecting a drive
-  signs you out, and revokes the session where the provider supports it.
+  signs you out, and revokes the session where the provider supports it; disconnecting Proton Drive also deletes
+  the Proton Drive SDK cache.
+- **Delete local data** (Settings → Privacy): **Delete all local data** disconnects every drive, then deletes the
+  notes, images, sync state and cached files stored on this device, including the Proton session and SDK cache
+  and the Microsoft (MSAL) accounts and tokens. When you disconnect the last drive you can also tick **Also
+  delete the notes stored on this device**. Nothing is ever deleted from a drive.
 
 The on-disk note format (IDs, note links, images, chord sequences) is shared with the desktop and web apps and described in
 [marknotes-spec](https://github.com/MaxDac/marknotes-spec/blob/main/note-format.md), checked out at `libre/spec/` as a

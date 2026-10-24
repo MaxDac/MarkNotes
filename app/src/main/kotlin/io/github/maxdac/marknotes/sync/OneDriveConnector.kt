@@ -106,6 +106,21 @@ class OneDriveConnector(private val context: Context, private val credentials: C
         }
     }
 
+    /**
+     * Removes every MSAL account with its tokens (accounts of drives disconnected without network included) and the
+     * MSAL configuration file. Fails when MSAL couldn't remove them.
+     */
+    override suspend fun deleteLocalData() {
+        stores.clear()
+        if (unavailableReason == null) {
+            withContext(Dispatchers.IO) {
+                val app = application()
+                app.accounts.forEach { app.removeAccount(it) }
+            }
+        }
+        File(context.filesDir, CONFIG_FILE).delete()
+    }
+
     private fun graph(accountId: String): GraphClient {
         if (credentials.load(accountId) == null) throw RemoteUnavailableException("Sign in to OneDrive again")
         return GraphClient(http, { accessToken(accountId) })
@@ -149,11 +164,12 @@ class OneDriveConnector(private val context: Context, private val credentials: C
                         .put("default", true)
                 )
             )
-        return File(context.filesDir, "msal_config.json").apply { writeText(json.toString()) }
+        return File(context.filesDir, CONFIG_FILE).apply { writeText(json.toString()) }
     }
 
     private companion object {
         const val UNCONFIGURED = "unconfigured"
+        const val CONFIG_FILE = "msal_config.json"
         val SCOPES = listOf("Files.ReadWrite", "User.Read")
     }
 }
