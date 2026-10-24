@@ -148,6 +148,8 @@ jobs:
       - name: Remove signing keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/release.keystore"
+      - name: Check signed Pro APK permissions
+        run: bash scripts/check-apk-permissions.sh app/build/outputs/apk/release/app-release.apk
       - name: Verify APK signature
         env:
           EXPECTED_CERT_SHA256: ${{ vars.RELEASE_CERT_SHA256 }}
