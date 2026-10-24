@@ -59,9 +59,14 @@ class OneDriveDriveStoreTest {
         """{"id":"$id","name":"$name","folder":{"childCount":0},"parentReference":{"id":"$parent"},""" +
             """"lastModifiedDateTime":"2024-01-01T00:00:00Z"}"""
 
-    private fun file(id: String, name: String, parent: String, cTag: String) =
+    private fun file(id: String, name: String, parent: String, cTag: String, modifiedMillis: Long? = null) =
         """{"id":"$id","name":"$name","file":{},"cTag":"$cTag","eTag":"e-$cTag",""" +
-            """"parentReference":{"id":"$parent"},"lastModifiedDateTime":"2024-01-01T00:00:00Z"}"""
+            """"parentReference":{"id":"$parent"},"lastModifiedDateTime":"2024-01-01T00:00:00Z"""" +
+            (
+                modifiedMillis?.let {
+                    ""","fileSystemInfo":{"lastModifiedDateTime":"${java.time.Instant.ofEpochMilli(it)}"}"""
+                } ?: ""
+                ) + "}"
 
     @Test
     fun fullTraversalBuildsRelativePaths() = runTest {
@@ -107,16 +112,34 @@ class OneDriveDriveStoreTest {
             "PUT /v1.0/me/drive/items/root:/Work/My%20Note.md:/content?@microsoft.graph.conflictBehavior=fail",
             file("n4", "My Note.md", "f1", "c4")
         )
+        route("PATCH /v1.0/me/drive/items/n4", file("n4", "My Note.md", "f1", "c4", 0L))
         val created = store.uploadNew("Work/My Note.md", "hi".toByteArray(), 0L)
         assertEquals("c4", created.version)
         assertEquals("Work/My Note.md", created.path)
 
         route("PUT /v1.0/me/drive/items/n2/content", file("n2", "Plan.md", "f1", "c5"))
+        route("PATCH /v1.0/me/drive/items/n2", file("n2", "Plan.md", "f1", "c5", 0L))
         val updated = store.uploadRevision(entries.getValue("Work/Plan.md"), "new".toByteArray(), 0L)
         assertEquals("c5", updated.version)
-        val put = requests.last()
+        val put = requests.last { it.method == "PUT" }
         assertEquals("e-c2", put.getHeader("If-Match"))
         assertEquals("new", put.body.readUtf8())
+    }
+
+    @Test
+    fun epochZeroIsPreservedRatherThanReplacedByTheUploadTime() = runTest {
+        store.snapshot()
+        route(
+            "PUT /v1.0/me/drive/items/root:/Copy.md:/content?@microsoft.graph.conflictBehavior=fail",
+            file("copy", "Copy.md", "root", "c-copy")
+        )
+        route("PATCH /v1.0/me/drive/items/copy", file("copy", "Copy.md", "root", "c-copy", 0L))
+
+        val created = store.uploadNew("Copy.md", "losing note".toByteArray(), 0L)
+
+        assertEquals(0L, created.modifiedMillis)
+        assertTrue(requests.last().body.readUtf8().contains("1970-01-01T00:00:00Z"))
+        assertEquals("e-c-copy", requests.last().getHeader("If-Match"))
     }
 
     @Test

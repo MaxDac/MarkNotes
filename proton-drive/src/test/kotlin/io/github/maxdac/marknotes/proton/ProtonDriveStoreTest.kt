@@ -124,6 +124,17 @@ class ProtonDriveStoreTest {
     }
 
     @Test
+    fun epochZeroIsNotReplacedByTheCurrentTime() = runTest {
+        val sdk = FakeClient()
+        val store = ProtonDriveStore(sdk.client, "MarkNotes")
+
+        val error = runCatching { store.uploadNew("Note.md", "note".toByteArray(), 0L) }.exceptionOrNull()
+
+        assertTrue(error is IllegalStateException)
+        assertEquals(Instant.EPOCH, sdk.uploadRequest!!.lastModificationTime)
+    }
+
+    @Test
     fun plannedFolderCreationCanReuseParentsButNotTheLeaf() = runTest {
         val sdk = FakeClient()
         val store = ProtonDriveStore(sdk.client, "MarkNotes")

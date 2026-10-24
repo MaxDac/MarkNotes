@@ -69,21 +69,18 @@ class ProtonDriveStore(
 
     override suspend fun uploadNew(path: String, bytes: ByteArray, modifiedMillis: Long): RemoteEntry {
         val parent = ensureFolder(NotePaths.parent(path))
-        val modified = modificationTime(modifiedMillis)
+        val modified = Instant.ofEpochMilli(modifiedMillis)
         val result = uploadFile(parent, NotePaths.name(path), Attachments.mimeFor(path) ?: MEDIA_TYPE, bytes, modified)
         return RemoteEntry(path, result.nodeUid.value, false, result.revisionUid.value, modified.toEpochMilli())
             .also { entries[path] = it }
     }
 
     override suspend fun uploadRevision(entry: RemoteEntry, bytes: ByteArray, modifiedMillis: Long): RemoteEntry {
-        val modified = modificationTime(modifiedMillis)
+        val modified = Instant.ofEpochMilli(modifiedMillis)
         val result = uploadNextRevision(RevisionUid(entry.version), bytes, modified)
         return entry.copy(version = result.revisionUid.value, modifiedMillis = modified.toEpochMilli())
             .also { entries[entry.path] = it }
     }
-
-    private fun modificationTime(modifiedMillis: Long): Instant =
-        if (modifiedMillis > 0L) Instant.ofEpochMilli(modifiedMillis) else Instant.now()
 
     private suspend fun uploadFile(
         parent: NodeUid,

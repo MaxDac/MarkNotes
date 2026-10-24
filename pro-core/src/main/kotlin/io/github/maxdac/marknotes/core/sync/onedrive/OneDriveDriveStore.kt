@@ -194,7 +194,6 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
     /** Stamps the uploaded [item] with the local edit time; failures must not record a successful sync. */
     private suspend fun withModifiedTime(item: JsonObject, path: String, modifiedMillis: Long): RemoteEntry {
         val uploaded = remember(item, path)
-        if (modifiedMillis <= 0L) return uploaded
         val body = buildJsonObject {
             putJsonObject("fileSystemInfo") {
                 put("lastModifiedDateTime", Instant.ofEpochMilli(modifiedMillis).toString())
