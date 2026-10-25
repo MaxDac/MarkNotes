@@ -7,6 +7,7 @@ import io.github.maxdac.marknotes.core.sync.RemoteChangedException
 import io.github.maxdac.marknotes.core.sync.SyncEngine
 import io.github.maxdac.marknotes.core.sync.SyncRecord
 import io.github.maxdac.marknotes.core.sync.UnsupportedRemoteOperationException
+import io.github.maxdac.marknotes.sync.RemoteFolderDeletion
 import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
@@ -595,6 +596,7 @@ class OneDriveDriveStoreTest {
 
         assertTrue(error is UnsupportedRemoteOperationException)
         assertEquals(before, requests.size)
+        assertEquals(RemoteFolderDeletion.UNSUPPORTED, store.remoteFolderDeletion)
     }
 
     @Test

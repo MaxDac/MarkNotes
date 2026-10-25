@@ -116,6 +116,23 @@ class ProtonAccountStorageTest {
     }
 
     @Test
+    fun userIdsOutliveTheSessionUntilRemovedAndStayEncrypted() {
+        val events = mutableListOf<DiagnosticCode>()
+        val storage = KeystoreSessionStorage(context, diagnostics = DiagnosticReporter { code, _ -> events += code })
+        storage.save("first", a)
+        storage.saveUserId("first", "user-a")
+        storage.saveUserId("second", "user-b")
+        storage.remove("first")
+        assertEquals(mapOf("first" to "user-a", "second" to "user-b"), KeystoreSessionStorage(context).userIds())
+        assertTrue(KeystoreSessionStorage(context).loadAll().isEmpty())
+        assertFalse(prefs.all.values.joinToString().contains("user-a"))
+        storage.removeUserId("first")
+        prefs.edit().putString("user:second", "unreadable").commit()
+        assertTrue(storage.userIds().isEmpty())
+        assertEquals(listOf(DiagnosticCode.AUTHENTICATION), events)
+    }
+
+    @Test
     fun separateNativeClientsUseSeparateCacheDatabases() = runBlocking {
         val root = File(context.cacheDir, "proton-isolation-test-${UUID.randomUUID()}")
         val cacheA = root.resolve("a")

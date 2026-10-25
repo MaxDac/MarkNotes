@@ -82,8 +82,36 @@ class KeystoreSessionStorage(
         check(edit.commit()) { "Could not remove the Proton session" }
     }
 
+    /** Never throws: an unreadable entry is dropped, and the account then can't be reconnected. */
+    @Synchronized
+    override fun userIds(): Map<String, String> = prefs.all.keys.filter { it.startsWith(USER_ID_PREFIX) }
+        .mapNotNull { key ->
+            val userId = prefs.getString(key, null)?.let { crypto.decrypt(it) }
+            if (userId.isNullOrBlank()) {
+                diagnostics.report(DiagnosticCode.AUTHENTICATION, null)
+                prefs.edit().remove(key).apply()
+                null
+            } else {
+                key.removePrefix(USER_ID_PREFIX) to userId
+            }
+        }.toMap()
+
+    @Synchronized
+    override fun saveUserId(accountId: String, userId: String) {
+        require(userId.isNotBlank()) { "Missing Proton user ID" }
+        check(prefs.edit().putString(USER_ID_PREFIX + accountId, crypto.encrypt(userId)).commit()) {
+            "Could not save the Proton account"
+        }
+    }
+
+    @Synchronized
+    override fun removeUserId(accountId: String) {
+        check(prefs.edit().remove(USER_ID_PREFIX + accountId).commit()) { "Could not remove the Proton account" }
+    }
+
     private companion object {
         const val KEY_SESSION = "session"
         const val PREFIX = "account:"
+        const val USER_ID_PREFIX = "user:"
     }
 }

@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import com.microsoft.identity.client.AcquireTokenParameters
 import com.microsoft.identity.client.AcquireTokenSilentParameters
 import com.microsoft.identity.client.AuthenticationCallback
+import com.microsoft.identity.client.IAccount
 import com.microsoft.identity.client.IAuthenticationResult
 import com.microsoft.identity.client.IMultipleAccountPublicClientApplication
 import com.microsoft.identity.client.PublicClientApplication
@@ -60,30 +61,66 @@ class OneDriveConnector(
         }
 
     override suspend fun signIn(activity: ComponentActivity): SignedInAccount? {
-        val app = application()
-        val result = suspendCancellableCoroutine<IAuthenticationResult?> { continuation ->
-            val parameters = AcquireTokenParameters.Builder()
-                .startAuthorizationFromActivity(activity)
-                .withScopes(SCOPES)
-                .withCallback(object : AuthenticationCallback {
-                    override fun onSuccess(authenticationResult: IAuthenticationResult) {
-                        continuation.resume(authenticationResult)
-                    }
-
-                    override fun onError(exception: MsalException) {
-                        continuation.resumeWithException(exception)
-                    }
-
-                    override fun onCancel() {
-                        continuation.resume(null)
-                    }
-                })
-                .build()
-            app.acquireToken(parameters)
-        } ?: return null
+        val result = interactiveSignIn(activity, application(), null) ?: return null
         val id = "onedrive-" + UUID.randomUUID()
         credentials.save(id, result.account.id)
         return SignedInAccount(id, provider, result.account.username)
+    }
+
+    override val supportsReconnect = true
+
+    /**
+     * Signs in to the drive's Microsoft account again through MSAL, which keeps the new tokens: the drive keeps its
+     * ID, stored account ID, folder and sync records. Another account is rejected and the old credentials kept.
+     */
+    override suspend fun reconnect(activity: ComponentActivity, account: DriveAccount): Boolean {
+        require(account.provider == provider)
+        unavailableReason?.let { throw RemoteUnavailableException(it) }
+        val reconnect = OneDriveReconnect(
+            load = credentials::load,
+            invalidate = { stores.remove(it) },
+            discard = { msalId ->
+                withContext(Dispatchers.IO) {
+                    val app = application()
+                    app.getAccount(msalId)?.let { app.removeAccount(it) }
+                }
+            }
+        )
+        return reconnect.reconnect(account.id) { expected ->
+            val app = application()
+            val (known, hint) = withContext(Dispatchers.IO) {
+                app.accounts.mapTo(HashSet()) { it.id } to app.getAccount(expected)
+            }
+            interactiveSignIn(activity, app, hint)?.let {
+                OneDriveSignIn(it.account.id, newToMsal = it.account.id !in known)
+            }
+        }
+    }
+
+    private suspend fun interactiveSignIn(
+        activity: ComponentActivity,
+        app: IMultipleAccountPublicClientApplication,
+        account: IAccount?
+    ): IAuthenticationResult? = suspendCancellableCoroutine { continuation ->
+        val parameters = AcquireTokenParameters.Builder()
+            .startAuthorizationFromActivity(activity)
+            .withScopes(SCOPES)
+            .apply { if (account != null) forAccount(account) }
+            .withCallback(object : AuthenticationCallback {
+                override fun onSuccess(authenticationResult: IAuthenticationResult) {
+                    continuation.resume(authenticationResult)
+                }
+
+                override fun onError(exception: MsalException) {
+                    continuation.resumeWithException(exception)
+                }
+
+                override fun onCancel() {
+                    continuation.resume(null)
+                }
+            })
+            .build()
+        app.acquireToken(parameters)
     }
 
     override suspend fun folderBrowser(accountId: String): RemoteFolderBrowser = OneDriveFolderBrowser(graph(accountId))
@@ -146,7 +183,7 @@ class OneDriveConnector(
         try {
             app.acquireTokenSilent(parameters).accessToken
         } catch (e: MsalUiRequiredException) {
-            throw RemoteUnavailableException("OneDrive sign-in expired, remove and add the drive again", e)
+            throw RemoteUnavailableException("OneDrive sign-in expired. Use Reconnect in Settings to sign in again", e)
         }
     }
 
