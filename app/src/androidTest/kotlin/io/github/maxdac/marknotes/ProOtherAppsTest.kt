@@ -43,6 +43,7 @@ class ProOtherAppsTest {
     @Before
     fun setUp() {
         scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.awaitWorkspace()
     }
 
     @After
