@@ -27,6 +27,10 @@ So:
 - Only OneDrive, Proton Drive and Pro-only UI (the Proton login screen) live here.
 - Dependencies used by shared code come from `libre/gradle/libs.versions.toml` (the `libs` catalog);
   Pro-only dependencies go in `gradle/libs.versions.toml` (the `pro` catalog).
+- marknotes-sync routing and verification come from Libre's `libre/gradle/marknotes-sync.settings.gradle`;
+  Pro owns the root `gradle/verification-metadata.xml` (sync artifacts only). When a `libre/` bump changes the
+  sync entries in `libre/gradle/verification-metadata.xml`, copy them in the same PR and run
+  `python3 libre/scripts/sync-contract.py --verification-root .` (see `docs/cloud-providers.md`).
 
 Clone with `git clone --recurse-submodules`, or run `git submodule update --init --recursive` after cloning: the
 build fails without `libre/`.

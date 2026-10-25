@@ -193,11 +193,32 @@ git submodule update --init --recursive libre
 libre/scripts/build-sync-from-source.sh
 ```
 
-The shared script verifies the source commit and catalog version. CI performs these steps in
+The shared script verifies the source commit and catalog version and writes a build receipt that Gradle checks
+before resolving the source artifacts (source mode needs `--no-configuration-cache`). CI performs these steps in
 `.github/actions/setup-android-build`; no generated bindings or native binaries are committed here.
-`-Pmarknotes.sync.fromSource=<checkout>` selects artifacts from an explicit source checkout instead.
+`-Pmarknotes.sync.fromSource=<checkout>` selects artifacts from an explicit source checkout instead (relative
+paths are relative to this repository's root).
 Release validation rejects a development source pin: remove it only when the reviewed matching artifacts have
 actually been published.
+
+### Sync dependency verification
+
+`settings.gradle.kts` applies Libre's `libre/gradle/marknotes-sync.settings.gradle`, which routes the
+`io.github.maxdac.marknotes` group exclusively to the source build or the marknotes-sync GitHub release.
+Gradle verifies the published sync bytes against this repository's root `gradle/verification-metadata.xml`
+(Gradle ignores the nested copy under `libre/`). It covers only the three sync artifacts; every other group,
+Pro-only dependencies included, is explicitly trusted. CI and signed builds require
+`--dependency-verification strict` (the default) and reject metadata-writing flags; the dependency-submission
+jobs pass it explicitly.
+
+When a `libre/` bump changes `libre/gradle/verification-metadata.xml`, copy its sync entries and
+`sync-source-commit` comment here in the same PR and check that both agree (offline):
+
+```sh
+python3 libre/scripts/sync-contract.py --verification-root .
+```
+
+Never regenerate the entries from a failing download; see `libre/docs/dependencies.md`.
 
 ## 7. Release builds
 

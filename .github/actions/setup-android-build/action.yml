@@ -20,6 +20,12 @@ runs:
       with:
         cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
+    # Libre's checker: catalog, marknotes-sync gitlink and this root's sync verification entries must agree with
+    # libre/gradle/verification-metadata.xml (offline, no downloads).
+    - name: Check sync dependency contract
+      shell: bash
+      run: python3 libre/scripts/sync-contract.py --verification-root .
+
     - name: Install Android SDK platform 37
       shell: bash
       run: |

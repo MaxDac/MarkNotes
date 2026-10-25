@@ -36,6 +36,9 @@ jobs:
           setup-gradle: "false"
       - if: github.event.pull_request.head.repo.full_name == github.repository
         uses: gradle/actions/dependency-submission@v6
+        with:
+          # The action disables dependency verification by default; the shared sync settings reject that in CI.
+          additional-arguments: --dependency-verification strict
       - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
