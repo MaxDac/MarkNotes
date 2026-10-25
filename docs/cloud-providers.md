@@ -137,6 +137,13 @@ Proton Drive needs no app registration and no secrets on Android, web or desktop
   for them.
 - **Stored credentials**: the password is never stored. On Android the session tokens and the key passphrases
   that unlock the drive's keys are kept on the device, encrypted with a key held in the Android Keystore.
+  Pro supports several Proton accounts. Each has its own local account ID, encrypted session, refresh lock
+  and separate SDK SQLite cache (including WAL/SHM sidecars). Signing out revokes and removes only that
+  account; deleting all local data removes every account and orphaned cache. Existing single-account
+  sessions migrate without changing the connected folder or account ID. Adding an account always opens
+  the login screen, and every login creates a new account, even for a Proton user that is already
+  connected: reusing that drive's ID would hand its sync records to a drive that may sync another
+  folder. When Proton revokes a session, sign in again by adding the drive again and removing the old one.
 - **Every request** sends the header `x-pm-appversion: external-drive-marknotes@0.1.0-alpha`.
 - **Login screen** shows "This is a third-party application not officially supported by Proton."
 - **No Proton branding** (logos or similar) anywhere in the apps.

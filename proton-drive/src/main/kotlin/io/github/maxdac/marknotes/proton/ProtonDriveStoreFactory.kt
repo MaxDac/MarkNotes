@@ -27,6 +27,7 @@ import me.proton.drive.sdk.entity.ClientCreateRequest
  */
 class ProtonDriveStoreFactory(
     context: Context,
+    private val cacheDirectory: File,
     baseUrl: String = ProtonAuthClient.DEFAULT_BASE_URL,
     private val appVersion: String = ProtonAuthClient.APP_VERSION,
     private val diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
@@ -52,7 +53,9 @@ class ProtonDriveStoreFactory(
                     baseUrl = baseUrl,
                     loggerProvider = ProtonDriveSdk.loggerProvider { level, _, _ -> log(level) },
                     // SQLite database for the SDK's node/metadata cache.
-                    cachePath = cacheDir(context).apply { mkdirs() }.resolve("cache.sqlite").absolutePath
+                    cachePath = cacheDirectory.apply {
+                        check(mkdirs() || isDirectory) { "Could not create the Proton Drive cache" }
+                    }.resolve("cache.sqlite").absolutePath
                 ),
                 userAddressResolver = keys,
                 publicAddressResolver = keys
@@ -83,8 +86,8 @@ class ProtonDriveStoreFactory(
         private const val CACHE_DIR = "proton-drive"
 
         /**
-         * The SDK's node/metadata cache (`cache.sqlite` with its `-wal`/`-shm` files). It belongs to the
-         * signed-in session: delete it on sign-out, once the stores using it are closed.
+         * Root of the account-specific SDK caches. Each factory must receive its own child directory
+         * (`cache.sqlite` and its `-wal`/`-shm` files), deleted only after its stores have closed.
          */
         fun cacheDir(context: Context): File = File(context.cacheDir, CACHE_DIR)
     }

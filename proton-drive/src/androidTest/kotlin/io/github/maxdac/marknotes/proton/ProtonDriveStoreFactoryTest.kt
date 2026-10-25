@@ -4,6 +4,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.maxdac.marknotes.core.auth.ProtonSession
 import io.github.maxdac.marknotes.core.sync.ProtonSessionSource
+import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -43,15 +45,21 @@ class ProtonDriveStoreFactoryTest {
     fun routesSdkRequestsThroughTheSession() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val sessions = FakeSessions()
-        val store = ProtonDriveStoreFactory(context).create(sessions, "MarkNotes") as ProtonDriveStore
-        store.use {
-            try {
-                it.snapshot()
-                fail("An invalid token must not list the drive")
-            } catch (expected: Exception) {
-                assertEquals(listOf("invalid-token"), sessions.refreshed)
-                assertNull(sessions.current)
+        val cache = File(context.cacheDir, "proton-routing-test-${UUID.randomUUID()}")
+        try {
+            val store = ProtonDriveStoreFactory(context, cacheDirectory = cache)
+                .create(sessions, "MarkNotes") as ProtonDriveStore
+            store.use {
+                try {
+                    it.snapshot()
+                    fail("An invalid token must not list the drive")
+                } catch (expected: Exception) {
+                    assertEquals(listOf("invalid-token"), sessions.refreshed)
+                    assertNull(sessions.current)
+                }
             }
+        } finally {
+            cache.deleteRecursively()
         }
     }
 }
