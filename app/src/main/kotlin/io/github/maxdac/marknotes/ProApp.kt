@@ -9,7 +9,7 @@ import io.github.maxdac.marknotes.sync.DriveConnector
 import io.github.maxdac.marknotes.sync.OneDriveConnector
 import io.github.maxdac.marknotes.sync.ProtonConnector
 
-/** MarkNotes Pro: the libre app (Dropbox) plus Proton Drive and OneDrive. */
+/** MarkNotes Plus (the Pro edition): the libre app (Dropbox) plus Proton Drive and OneDrive. */
 class ProApp : MarkNotesApp() {
     override val dropboxAppKey: String = BuildConfig.DROPBOX_APP_KEY
     override val issueRepository: String = "MaxDac/MarkNotes"

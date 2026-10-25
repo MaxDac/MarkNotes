@@ -197,7 +197,7 @@ jobs:
           if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
           gh release create "v$VERSION" dist/* \
             --target "$GITHUB_SHA" \
-            --title "MarkNotes $VERSION" \
+            --title "MarkNotes Plus $VERSION" \
             --generate-notes \
             "${flags[@]}"
       - name: Write job summary
@@ -206,7 +206,7 @@ jobs:
           PRERELEASE: ${{ inputs.prerelease }}
         run: |
           {
-            echo "## MarkNotes $VERSION"
+            echo "## MarkNotes Plus $VERSION"
             echo
             echo "| Field | Value |"
             echo "| --- | --- |"
