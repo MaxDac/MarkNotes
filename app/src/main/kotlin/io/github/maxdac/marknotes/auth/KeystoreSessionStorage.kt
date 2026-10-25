@@ -8,7 +8,11 @@ import io.github.maxdac.marknotes.core.diagnostics.DiagnosticCode
 import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import io.github.maxdac.marknotes.data.MarkNotesDatabase
 
-/** Stores the Proton session in SharedPreferences, encrypted with [KeystoreCrypto]. */
+/**
+ * Stores the Proton sessions in SharedPreferences, encrypted with [KeystoreCrypto], one entry per drive account.
+ * [SessionStorage] is the single-session format that predates multiple accounts: [loadAll] migrates it to the
+ * [MarkNotesDatabase.LEGACY_PROTON_ID] account, which keeps the drive and its synced folder.
+ */
 class KeystoreSessionStorage(
     context: Context,
     private val crypto: KeystoreCrypto = KeystoreCrypto(),
@@ -44,63 +48,42 @@ class KeystoreSessionStorage(
         prefs.edit().remove(KEY_SESSION).apply()
     }
 
+    /** Never throws: it runs when the app starts, and a failed migration is retried on the next start. */
     @Synchronized
     override fun loadAll(): Map<String, ProtonSession> {
+        val legacyKey = PREFIX + MarkNotesDatabase.LEGACY_PROTON_ID
         val legacy = load()
         if (legacy != null) {
-            val key = PREFIX + MarkNotesDatabase.LEGACY_PROTON_ID
-            val edit = prefs.edit()
-            if (!prefs.contains(key)) {
-                edit.putString(key, crypto.encrypt(legacy.toJson()))
-                if (legacy.userId.isNotBlank()) {
-                    edit.putString(IDENTITY_PREFIX + MarkNotesDatabase.LEGACY_PROTON_ID, legacy.userId)
-                }
-            }
-            check(edit.remove(KEY_SESSION).commit()) { "Could not migrate the Proton session" }
+            val edit = prefs.edit().remove(KEY_SESSION)
+            // A newer session already saved for the account (a migration interrupted after a refresh) wins.
+            if (!prefs.contains(legacyKey)) edit.putString(legacyKey, crypto.encrypt(legacy.toJson()))
+            if (!edit.commit()) diagnostics.report(DiagnosticCode.AUTHENTICATION, null)
         }
-        return prefs.all.keys.filter { it.startsWith(PREFIX) }.mapNotNull { key ->
+        val sessions = prefs.all.keys.filter { it.startsWith(PREFIX) }.mapNotNull { key ->
             val stored = prefs.getString(key, null) ?: return@mapNotNull null
-            decode(stored) { check(prefs.edit().remove(key).commit()) }?.let {
-                key.removePrefix(PREFIX) to it
-            }
+            decode(stored) { prefs.edit().remove(key).apply() }?.let { key.removePrefix(PREFIX) to it }
         }.toMap()
+        // Until the migration is committed, the legacy entry still holds the account's session.
+        if (legacy == null || MarkNotesDatabase.LEGACY_PROTON_ID in sessions) return sessions
+        return sessions + (MarkNotesDatabase.LEGACY_PROTON_ID to legacy)
     }
 
     @Synchronized
-    override fun loadUserIds(): Map<String, String> =
-        prefs.all.keys.filter { it.startsWith(IDENTITY_PREFIX) }.associate { key ->
-            key.removePrefix(IDENTITY_PREFIX) to requireNotNull(prefs.getString(key, null))
-        }
-
-    @Synchronized
     override fun save(accountId: String, session: ProtonSession) {
-        val identityKey = IDENTITY_PREFIX + accountId
-        val savedUserId = prefs.getString(identityKey, null)
-        require(savedUserId == null || session.userId.isBlank() || savedUserId == session.userId) {
-            "Cannot replace a Proton account with another user"
-        }
-        val edit = prefs.edit().putString(PREFIX + accountId, crypto.encrypt(session.toJson()))
-        if (session.userId.isNotBlank()) edit.putString(identityKey, session.userId)
-        check(edit.commit()) {
+        check(prefs.edit().putString(PREFIX + accountId, crypto.encrypt(session.toJson())).commit()) {
             "Could not save the Proton session"
         }
     }
 
     @Synchronized
-    override fun invalidate(accountId: String) {
-        check(prefs.edit().remove(PREFIX + accountId).commit()) { "Could not invalidate the Proton session" }
-    }
-
-    @Synchronized
     override fun remove(accountId: String) {
-        check(prefs.edit().remove(PREFIX + accountId).remove(IDENTITY_PREFIX + accountId).commit()) {
-            "Could not remove the Proton session"
-        }
+        val edit = prefs.edit().remove(PREFIX + accountId)
+        if (accountId == MarkNotesDatabase.LEGACY_PROTON_ID) edit.remove(KEY_SESSION)
+        check(edit.commit()) { "Could not remove the Proton session" }
     }
 
     private companion object {
         const val KEY_SESSION = "session"
         const val PREFIX = "account:"
-        const val IDENTITY_PREFIX = "identity:"
     }
 }

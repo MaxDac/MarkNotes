@@ -106,30 +106,13 @@ class ProtonAccountStorageTest {
     }
 
     @Test
-    fun invalidationRetainsOnlyStableIdentityAcrossRestartAndRemovalForgetsIt() {
+    fun removingTheLegacyAccountAlsoForgetsAnUnmigratedLegacySession() {
         val storage = KeystoreSessionStorage(context)
-        storage.save("first", a)
+        storage.save(a)
         storage.save("second", b)
-        storage.invalidate("first")
-        val restarted = KeystoreSessionStorage(context)
-        assertEquals(mapOf("second" to b), restarted.loadAll())
-        assertEquals(mapOf("first" to "user-a", "second" to "user-b"), restarted.loadUserIds())
-        restarted.remove("first")
-        assertEquals(mapOf("second" to "user-b"), storage.loadUserIds())
-        assertEquals(mapOf("second" to b), storage.loadAll())
-    }
-
-    @Test
-    fun changingTheProviderIdentityUnderAnExistingLocalIdIsRejected() {
-        val storage = KeystoreSessionStorage(context)
-        storage.save("first", a)
-        try {
-            storage.save("first", b)
-            error("Must not replace another user's credentials")
-        } catch (expected: IllegalArgumentException) {
-            assertEquals(mapOf("first" to a), storage.loadAll())
-            assertEquals(mapOf("first" to "user-a"), storage.loadUserIds())
-        }
+        storage.remove(MarkNotesDatabase.LEGACY_PROTON_ID)
+        assertFalse(prefs.contains("session"))
+        assertEquals(mapOf("second" to b), KeystoreSessionStorage(context).loadAll())
     }
 
     @Test

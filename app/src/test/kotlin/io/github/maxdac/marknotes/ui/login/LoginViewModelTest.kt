@@ -82,9 +82,7 @@ class LoginViewModelTest {
     private fun connector(client: ProtonAuthClient) = ProtonConnector(
         sessionStorage = object : ProtonAccountSessionStorage {
             override fun loadAll(): Map<String, ProtonSession> = emptyMap()
-            override fun loadUserIds(): Map<String, String> = emptyMap()
             override fun save(accountId: String, session: ProtonSession) = error("Not used")
-            override fun invalidate(accountId: String) = Unit
             override fun remove(accountId: String) = Unit
         },
         authClient = client,

@@ -82,6 +82,9 @@ class ProtonConnectorTest {
         assertSame(a, connector.store(ACCOUNT))
         assertEquals(listOf(SESSION, SESSION_B), factory.sources.map { it.current })
         assertNotEquals(ProtonConnector.accountCacheDir(cacheDir, ACCOUNT.id), cache("b"))
+        // The pre-multi-account SDK database in the root is no longer used by any client.
+        assertFalse(cacheDir.resolve("cache.sqlite").exists())
+        assertFalse(cacheDir.resolve("cache.sqlite-wal").exists())
 
         val restarted = connector()
         restarted.store(ACCOUNT)
@@ -91,34 +94,45 @@ class ProtonConnectorTest {
     }
 
     @Test
-    fun loginGetsDistinctStableLocalIdsAndReloginRetiresOnlyItsOwnSource() = runTest {
+    fun everyLoginGetsANewAccountEvenForAConnectedUserAndLeavesOtherAccountsAlone() = runTest {
         val connector = connector()
-        connector.store(ACCOUNT)
+        val a = connector.store(ACCOUNT)
         val b = connector.store(ACCOUNT.copy(id = "b"))
-        val old = factory.sources.first()
-        connector.onLoggedIn(SESSION.copy(uid = "new-uid"))
+        connector.onLoggedIn(SESSION.copy(uid = "new-uid", accessToken = "access-2"))
         assertFalse(connector.needsSignInScreen())
-        assertEquals(ACCOUNT.id, connector.takeSignedInAccount()?.id)
+        val first = connector.takeSignedInAccount()!!
         assertTrue(connector.needsSignInScreen())
-        assertNull(old.current)
-        old.invalidate()
-        assertEquals("new-uid", storage.sessions[ACCOUNT.id]?.uid)
+        assertNull(connector.takeSignedInAccount())
+        assertTrue(first.id.startsWith("proton-"))
+        assertEquals("me", first.label)
+        // The drive already connected to the same Proton user keeps its session, store and sync records.
+        assertEquals(SESSION, storage.sessions[ACCOUNT.id])
+        assertEquals("new-uid", storage.sessions[first.id]?.uid)
+        assertSame(a, connector.store(ACCOUNT))
         assertSame(b, connector.store(ACCOUNT.copy(id = "b")))
-        assertTrue(factory.created.first().closed)
-        assertFalse(factory.created[1].closed)
-        assertNotSame(factory.created.first(), connector.store(ACCOUNT))
+        assertTrue(factory.created.none { it.closed })
+        assertNotSame(a, connector.store(ACCOUNT.copy(id = first.id)))
+        assertEquals("new-uid", factory.sources.last().current?.uid)
 
-        connector.onLoggedIn(SESSION.copy(uid = "c", userId = "user-c", username = "third"))
-        val c = connector.takeSignedInAccount()!!
-        assertNotEquals(ACCOUNT.id, c.id)
-        assertNotEquals("b", c.id)
-        assertEquals(
-            c.id,
-            connector().run {
-                onLoggedIn(SESSION.copy(uid = "c2", userId = "user-c", username = "third"))
-                takeSignedInAccount()?.id
-            }
-        )
+        connector.onLoggedIn(SESSION.copy(uid = "again"))
+        val second = connector.takeSignedInAccount()!!
+        assertNotEquals(first.id, second.id)
+        assertEquals(setOf(ACCOUNT.id, "b", first.id, second.id), storage.sessions.keys)
+        connector().store(ACCOUNT.copy(id = second.id))
+        assertEquals("again", factory.sources.last().current?.uid)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun anAbandonedLoginIsRevokedWhenTheNextLoginCompletes() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Code":1000}"""))
+        val connector = connector()
+        connector.onLoggedIn(SESSION.copy(uid = "abandoned"))
+        connector.onLoggedIn(SESSION.copy(uid = "kept"))
+        assertEquals("abandoned", server.takeRequest().getHeader("x-pm-uid"))
+        val kept = connector.takeSignedInAccount()!!
+        assertEquals(setOf(ACCOUNT.id, "b", kept.id), storage.sessions.keys)
+        assertEquals("kept", storage.sessions[kept.id]?.uid)
     }
 
     @Test
@@ -159,7 +173,7 @@ class ProtonConnectorTest {
     }
 
     @Test
-    fun failedCloseKeepsCacheForRetryRatherThanDeletingAnOpenDatabase() = runTest {
+    fun failedCloseKeepsTheCacheUntilTheNextSignOutRatherThanDeletingAnOpenDatabase() = runTest {
         server.enqueue(MockResponse().setBody("""{"Code":1000}"""))
         val connector = connector()
         connector.store(ACCOUNT)
@@ -170,11 +184,29 @@ class ProtonConnectorTest {
         } catch (expected: IOException) {
             assertTrue(ProtonConnector.accountCacheDir(cacheDir, ACCOUNT.id).exists())
         }
+        assertNull(storage.sessions[ACCOUNT.id])
         assertEquals(listOf(DiagnosticCode.SDK_ERROR), events.map { it.first })
-        factory.created.single().closeFailure = null
+        try {
+            connector.store(ACCOUNT)
+            error("Must require login")
+        } catch (expected: RemoteUnavailableException) {
+            assertEquals(1, factory.created.size)
+        }
         connector.signOut(ACCOUNT.id)
         assertFalse(ProtonConnector.accountCacheDir(cacheDir, ACCOUNT.id).exists())
         assertEquals(1, server.requestCount)
+        assertEquals(SESSION_B, storage.sessions["b"])
+    }
+
+    @Test
+    fun aStoreThatFailsToCloseDoesNotBlockItsAccountsNextStore() = runTest {
+        val connector = connector()
+        connector.store(ACCOUNT)
+        factory.created.single().closeFailure = IOException("close failed")
+        val next = connector.store(ACCOUNT.copy(remoteFolder = "Another"))
+        assertSame(factory.created[1], next)
+        assertSame(next, connector.store(ACCOUNT.copy(remoteFolder = "Another")))
+        assertEquals(listOf(DiagnosticCode.SDK_ERROR), events.map { it.first })
     }
 
     @Test
@@ -205,6 +237,27 @@ class ProtonConnectorTest {
         assertFalse(cacheDir.exists())
         connector.deleteLocalData()
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun deleteLocalDataRemovesEveryAccountEvenWhenOneFails() = runTest {
+        repeat(2) { server.enqueue(MockResponse().setBody("""{"Code":1000}""")) }
+        val connector = connector()
+        connector.store(ACCOUNT)
+        connector.store(ACCOUNT.copy(id = "b"))
+        factory.created.first().closeFailure = IOException("close failed")
+        try {
+            connector.deleteLocalData()
+            error("Must report cleanup failure")
+        } catch (expected: IOException) {
+            assertTrue(cacheDir.exists())
+        }
+        assertEquals(2, server.requestCount)
+        assertTrue(storage.sessions.isEmpty())
+        assertTrue(factory.created[1].closed)
+        assertFalse(ProtonConnector.accountCacheDir(cacheDir, "b").exists())
+        connector.deleteLocalData()
+        assertFalse(cacheDir.exists())
     }
 
     @Test
@@ -320,34 +373,30 @@ class ProtonConnectorTest {
     }
 
     @Test
-    fun invalidatedAccountRestoresItsStableIdOnLoginAfterRestart() = runTest {
+    fun invalidatedAccountStaysSignedOutAfterRestartWithoutTouchingOthers() = runTest {
         val connector = connector()
         connector.store(ACCOUNT)
         factory.sources.single().invalidate()
         assertNull(storage.sessions[ACCOUNT.id])
-        assertEquals(SESSION.userId, storage.userIds[ACCOUNT.id])
         val restarted = connector()
-        restarted.onLoggedIn(SESSION.copy(uid = "replacement"))
-        assertEquals(ACCOUNT.id, restarted.takeSignedInAccount()?.id)
-        assertEquals("replacement", storage.sessions[ACCOUNT.id]?.uid)
-        assertEquals(SESSION_B, storage.sessions["b"])
+        try {
+            restarted.store(ACCOUNT)
+            error("Must require login")
+        } catch (expected: RemoteUnavailableException) {
+            assertEquals(1, factory.created.size)
+        }
+        restarted.store(ACCOUNT.copy(id = "b"))
+        assertEquals(SESSION_B, factory.sources.last().current)
     }
 
     private class MemoryStorage : ProtonAccountSessionStorage {
         val sessions = mutableMapOf(ProtonConnector.ACCOUNT_ID to SESSION, "b" to SESSION_B)
-        val userIds = sessions.mapValues { it.value.userId }.toMutableMap()
         override fun loadAll() = sessions.toMap()
-        override fun loadUserIds() = userIds.toMap()
         override fun save(accountId: String, session: ProtonSession) {
             sessions[accountId] = session
-            userIds[accountId] = session.userId
-        }
-        override fun invalidate(accountId: String) {
-            sessions.remove(accountId)
         }
         override fun remove(accountId: String) {
             sessions.remove(accountId)
-            userIds.remove(accountId)
         }
     }
 
