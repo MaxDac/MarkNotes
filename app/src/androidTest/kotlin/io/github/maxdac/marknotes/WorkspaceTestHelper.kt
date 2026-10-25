@@ -2,25 +2,20 @@ package io.github.maxdac.marknotes
 
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.ComposeTestRule
-import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ActivityScenario
+import androidx.test.platform.app.InstrumentationRegistry
 import io.github.maxdac.marknotes.ui.browser.NEW_NOTE_FAB_TAG
 
-private const val GETTING_STARTED_SKIP_TAG = "getting-started-skip"
-
-fun ComposeTestRule.awaitWorkspace() {
+/**
+ * Launches [MainActivity] on the note list. The first-run guide is marked as seen beforehand, as Libre's flow tests
+ * do, so a dismissing guide dialog can't race the test's first interactions; Libre's GettingStartedFlowTest covers it.
+ */
+fun ComposeTestRule.launchWorkspace(): ActivityScenario<MainActivity> {
+    InstrumentationRegistry.getInstrumentation().targetContext.appContainer.settings.setGettingStartedConsumed(true)
+    val scenario = ActivityScenario.launch(MainActivity::class.java)
     waitForIdle()
-    waitUntil(timeoutMillis = 10_000) {
-        onAllNodes(hasTestTag(NEW_NOTE_FAB_TAG) or hasTestTag(GETTING_STARTED_SKIP_TAG))
-            .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
-    }
-    waitForIdle()
-    if (onAllNodes(hasTestTag(GETTING_STARTED_SKIP_TAG))
-            .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
-    ) {
-        onNodeWithTag(GETTING_STARTED_SKIP_TAG).performClick()
-    }
     waitUntil(timeoutMillis = 10_000) {
         onAllNodes(hasTestTag(NEW_NOTE_FAB_TAG)).fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
     }
+    return scenario
 }

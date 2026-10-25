@@ -26,8 +26,7 @@ class ProProvidersTest {
 
     @Before
     fun setUp() {
-        scenario = ActivityScenario.launch(MainActivity::class.java)
-        compose.awaitWorkspace()
+        scenario = compose.launchWorkspace()
     }
 
     @After
