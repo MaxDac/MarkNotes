@@ -38,8 +38,7 @@ class ProChordSequencesTest {
     @Before
     fun setUp() {
         settings.setChordSequencesEnabled(false)
-        scenario = ActivityScenario.launch(MainActivity::class.java)
-        compose.awaitWorkspace()
+        scenario = compose.launchWorkspace()
     }
 
     @After
