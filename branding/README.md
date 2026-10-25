@@ -28,5 +28,5 @@ To regenerate the assets after changing an SVG, run the shared generator from th
 JDK 17+, e.g. the one used for the Gradle build):
 
 ```sh
-java libre/branding/GenerateIcons.java GENERATOR_ARGS
+java libre/branding/GenerateIcons.java branding app/src/main/res marknotes-plus
 ```
