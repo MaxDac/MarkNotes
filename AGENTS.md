@@ -1,7 +1,10 @@
 # AGENTS.md
 
-Canonical instructions for coding agents (Claude Code, GitHub Copilot, others) working on **MarkNotes Pro for
-Android** (`io.github.maxdac.marknotes`): the libre app plus OneDrive and Proton Drive sync, released on GitHub only.
+Canonical instructions for coding agents (Claude Code, GitHub Copilot, others) working on **MarkNotes Plus for
+Android** (`io.github.maxdac.marknotes`, the "Pro" edition in code and in the spec): the libre app plus OneDrive and
+Proton Drive sync, released on GitHub only. It must stay visibly different from the F-Droid app: its own `app_name`
+("MarkNotes Plus") and icon (indigo tile, plus badge) override the shared resources in `app/src/main/res`,
+generated from the masters in `branding/` (see `branding/README.md`).
 `CLAUDE.md` and `.github/copilot-instructions.md` point here; keep agent guidance in this file.
 
 MarkNotes is one of several apps that share the same notes folder through Proton Drive, Dropbox and OneDrive.
@@ -39,7 +42,7 @@ build fails without `libre/`.
 
 | Repo | What | Stack |
 | --- | --- | --- |
-| [MaxDac/MarkNotes](https://github.com/MaxDac/MarkNotes) | This repo: MarkNotes Pro for Android (OneDrive, Proton Drive) | Kotlin, Gradle |
+| [MaxDac/MarkNotes](https://github.com/MaxDac/MarkNotes) | This repo: MarkNotes Plus for Android (OneDrive, Proton Drive) | Kotlin, Gradle |
 | [MaxDac/marknotes-android](https://github.com/MaxDac/marknotes-android) | The libre Android app and the shared code, `libre/` here | Kotlin, Gradle, Jetpack Compose |
 | [MaxDac/marknotes-electron](https://github.com/MaxDac/marknotes-electron) | Desktop app (Windows, macOS, Linux) | Electron, TypeScript, CodeMirror |
 | [MaxDac/marknotes-web](https://github.com/MaxDac/marknotes-web) | Web app | Phoenix (Elixir), TypeScript assets |
@@ -85,7 +88,7 @@ Gradle graph), **actionlint** and **CodeQL**. Required checks and review-thread 
 | `:app-shared` | `libre/app-shared` | The Android app as a library: Compose UI, `AppContainer` DI, Room, `DriveConnector` extension points, Dropbox. |
 | `:pro-core` | `pro-core` | Pure Kotlin/JVM: OneDrive (Microsoft Graph) `RemoteDriveStore`, Proton SRP and auth client. Unit tested. |
 | `:proton-drive` | `proton-drive` | Proton Drive `RemoteDriveStore` on the Proton Drive SDK (JNI, `arm64-v8a`/`x86_64` only) plus the protoncore network stack and address-key resolvers. |
-| `:app` | `app` | The Pro application: `ProApp` registers the Dropbox, OneDrive and Proton `DriveConnector`s; MSAL sign-in, Proton login screen, keystore session storage. |
+| `:app` | `app` | The Pro application (MarkNotes Plus): name and icon overrides; `ProApp` registers the Dropbox, OneDrive and Proton `DriveConnector`s; MSAL sign-in, Proton login screen, keystore session storage. |
 
 The sync engine only talks to `RemoteDriveStore`; changes to the sync algorithm go in marknotes-sync (with the
 spec), not here; tests use the in-memory `FakeRemoteDriveStore`.

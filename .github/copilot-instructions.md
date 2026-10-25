@@ -3,7 +3,7 @@
 Read [`AGENTS.md`](../AGENTS.md) first: it is the canonical guide (build/test commands, architecture,
 conventions, release, sibling repos). Key rules:
 
-- MarkNotes Pro for Android (Kotlin, Gradle): the libre app from [marknotes-android](https://github.com/MaxDac/marknotes-android)
+- MarkNotes Plus for Android (the Pro edition; Kotlin, Gradle): the libre app from [marknotes-android](https://github.com/MaxDac/marknotes-android)
   (the `libre/` submodule: `:core` logic and the `:app-shared` Compose app) plus OneDrive and Proton Drive
   (`:pro-core`, `:proton-drive`, `:app`). Change shared code in marknotes-android first, then bump `libre/` here;
   never edit `libre/` in a MarkNotes PR. Clone with `--recurse-submodules`.

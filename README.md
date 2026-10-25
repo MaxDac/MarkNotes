@@ -1,11 +1,16 @@
-# MarkNotes
+# MarkNotes Plus
 
 Simple Android markdown notes app with folders and sync to Proton Drive (unofficial), Dropbox and OneDrive.
 
-This repository builds **MarkNotes Pro** (`io.github.maxdac.marknotes`), published on GitHub Releases only. The
-app itself lives in [MaxDac/marknotes-android](https://github.com/MaxDac/marknotes-android), checked out here as the
-`libre/` git submodule: that repo builds the free-software **MarkNotes** app (Dropbox only), published on
+This repository builds **MarkNotes Plus** (`io.github.maxdac.marknotes`, called the Pro edition in code and in
+the spec), published on GitHub Releases only. The app itself lives in
+[MaxDac/marknotes-android](https://github.com/MaxDac/marknotes-android), checked out here as the `libre/` git
+submodule: that repo builds the free-software **MarkNotes** app (Dropbox only), published on
 [F-Droid](https://f-droid.org). This repo adds OneDrive and Proton Drive on top of it.
+
+To tell the two apart, MarkNotes Plus has its own name and icon: an indigo tile with an amber plus badge (also in
+the themed icon and the in-app logo), where the F-Droid app has a blue tile. The masters are in
+[`branding/`](branding/README.md).
 
 > **This is a third-party application not officially supported by Proton.**
 > MarkNotes is a personal, non-commercial project. It is not affiliated with or endorsed by Proton AG,
@@ -117,7 +122,7 @@ Out of scope: search, tags, background sync, widgets, local encryption.
 | `:app-shared` | `libre/app-shared` | The Android app as a library: Jetpack Compose + Material 3, Navigation Compose, MVVM with `StateFlow`, Room (drive accounts and sync metadata), manual DI, `DriveConnector` extension points, Dropbox store and sign-in. |
 | `:pro-core` | `pro-core` | Pure Kotlin/JVM: OneDrive (Microsoft Graph) store, Proton SRP + auth client. Unit tested. |
 | `:proton-drive` | `proton-drive` | Proton Drive store built on the [Proton Drive SDK](https://github.com/ProtonDriveApps/sdk), plus the protoncore network stack and address-key resolvers it needs. Always included. |
-| `:app` | `app` | The Pro application: registers the Dropbox, OneDrive and Proton Drive connectors; MSAL sign-in and the Proton login screen. |
+| `:app` | `app` | The Pro application (MarkNotes Plus): name and icon overrides; registers the Dropbox, OneDrive and Proton Drive connectors; MSAL sign-in and the Proton login screen. |
 
 `:core` and `:app-shared` come from the `libre/` submodule: change them in
 [marknotes-android](https://github.com/MaxDac/marknotes-android) first, then bump the submodule here (Dependabot
