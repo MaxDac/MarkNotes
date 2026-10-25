@@ -84,6 +84,9 @@ class LoginViewModelTest {
             override fun loadAll(): Map<String, ProtonSession> = emptyMap()
             override fun save(accountId: String, session: ProtonSession) = error("Not used")
             override fun remove(accountId: String) = Unit
+            override fun userIds(): Map<String, String> = emptyMap()
+            override fun saveUserId(accountId: String, userId: String) = error("Not used")
+            override fun removeUserId(accountId: String) = Unit
         },
         authClient = client,
         factory = {

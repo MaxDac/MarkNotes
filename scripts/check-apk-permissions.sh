@@ -16,7 +16,8 @@ if [ ! -x "$aapt2" ]; then
   exit 1
 fi
 
-# Pro adds network-state access and MSAL's YubiKit NFC support, and uses its own application ID.
+# Pro adds MSAL's YubiKit NFC support and uses its own application ID. ACCESS_NETWORK_STATE comes from the
+# cloud providers and from Libre's sync when the network comes back.
 expected="$(printf '%s\n' \
   android.permission.ACCESS_NETWORK_STATE \
   android.permission.INTERNET \

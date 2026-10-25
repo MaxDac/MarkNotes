@@ -8,6 +8,7 @@ import io.github.maxdac.marknotes.core.sync.RemoteFolder
 import io.github.maxdac.marknotes.core.sync.RemoteFolderBrowser
 import io.github.maxdac.marknotes.core.sync.SyncManifest
 import io.github.maxdac.marknotes.core.sync.UnsupportedRemoteOperationException
+import io.github.maxdac.marknotes.sync.RemoteFolderDeletion
 import io.github.maxdac.marknotes.sync.foldCase
 import java.io.IOException
 import java.net.URLEncoder
@@ -112,7 +113,7 @@ class GraphClient(
             null
         }
         return when (code) {
-            401 -> "OneDrive session expired, please sign in again"
+            401 -> "OneDrive session expired. Use Reconnect in Settings to sign in again"
             else -> "OneDrive error $code" + (detail?.let { ": $it" } ?: "")
         }
     }
@@ -153,6 +154,9 @@ class OneDriveFolderBrowser(private val graph: GraphClient) : RemoteFolderBrowse
  */
 class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : RemoteDriveStore {
     private val folder = syncFolder.trim('/')
+
+    // Graph has no atomic delete-if-empty: locally removed folders are left on OneDrive for the user to remove.
+    override val remoteFolderDeletion = RemoteFolderDeletion.UNSUPPORTED
 
     private class Cached(val entry: RemoteEntry, val eTag: String)
 

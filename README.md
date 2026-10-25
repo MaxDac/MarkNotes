@@ -83,6 +83,10 @@ MarkNotes shares the same notes folder across these apps (also listed in Setting
 - Sessions and tokens are stored encrypted with an Android Keystore AES-GCM key. Disconnecting a drive
   signs you out, and revokes the session where the provider supports it; disconnecting Proton Drive also deletes
   the Proton Drive SDK cache.
+- **Reconnect** (Settings): when a Dropbox, OneDrive or Proton Drive session expires, sign in again to the same
+  account and the drive keeps its folder and sync history. The app checks the provider's account ID (MSAL account
+  ID, Proton user ID) and refuses another account, keeping the old credentials. A Proton Drive drive added by an
+  older version whose session had already expired can't be verified: disconnect it and add it again.
 - **Delete local data** (Settings → Privacy): **Delete all local data** disconnects every drive, then deletes the
   notes, images, sync state and cached files stored on this device, including the Proton session and SDK cache
   and the Microsoft (MSAL) accounts and tokens. When you disconnect the last drive you can also tick **Also
@@ -153,7 +157,8 @@ golden fixture against the real implementation (`./gradlew :core:parityTest` and
 see AGENTS.md, "Cross-app parity").
 
 The existing "Build debug APK" check also builds the unsigned Pro release APK and checks both APKs' merged
-permissions. The allowlist is `INTERNET`, `ACCESS_NETWORK_STATE` (cloud providers), `NFC` (MSAL's YubiKit
+permissions. The allowlist is `INTERNET`, `ACCESS_NETWORK_STATE` (cloud providers and syncing when the network
+comes back), `NFC` (MSAL's YubiKit
 dependency), `USE_BIOMETRIC` (app lock), and
 `io.github.maxdac.marknotes.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (AndroidX internal receivers).
 Any addition, including implicit phone or storage permissions from a dependency missing `uses-sdk`, fails

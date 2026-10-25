@@ -389,14 +389,171 @@ class ProtonConnectorTest {
         assertEquals(SESSION_B, factory.sources.last().current)
     }
 
+    @Test
+    fun userIdsOfLiveSessionsAreBackfilledAndNewLoginsKeepTheirs() = runTest {
+        val connector = connector()
+        assertEquals(mapOf(ACCOUNT.id to "user-a", "b" to "user-b"), storage.userIds)
+        connector.onLoggedIn(SESSION.copy(uid = "new", userId = "user-c"))
+        val added = connector.takeSignedInAccount()!!
+        assertEquals("user-c", storage.userIds[added.id])
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun reconnectToTheSameUserReplacesAnExpiredSessionUnderTheSameAccount() = runTest {
+        val connector = connector()
+        val old = connector.store(ACCOUNT) as ClosableStore
+        factory.sources.first().invalidate()
+        assertNull(storage.sessions[ACCOUNT.id])
+        val renewed = SESSION.copy(uid = "renewed", accessToken = "access-2")
+        connector.reconnectScreen(ACCOUNT)
+        connector.stageReconnect(ACCOUNT.id, renewed)
+
+        assertTrue(connector.commitReconnect(ACCOUNT))
+
+        assertEquals(renewed, storage.sessions[ACCOUNT.id])
+        assertEquals("user-a", storage.userIds[ACCOUNT.id])
+        val next = connector.store(ACCOUNT)
+        assertNotSame(old, next)
+        assertTrue(old.closed)
+        assertEquals(renewed, factory.sources.last().current)
+        assertEquals(SESSION_B, storage.sessions["b"])
+        // Nothing to revoke: the expired session was already gone.
+        assertEquals(0, server.requestCount)
+        assertFalse(connector.commitReconnect(ACCOUNT))
+    }
+
+    @Test
+    fun reconnectWhileTheOldSessionStillWorksRevokesIt() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Code":1000}"""))
+        val connector = connector()
+        connector.store(ACCOUNT)
+        connector.stageReconnect(ACCOUNT.id, SESSION.copy(uid = "renewed"))
+        assertTrue(connector.commitReconnect(ACCOUNT))
+        assertEquals(SESSION.uid, server.takeRequest().getHeader("x-pm-uid"))
+        assertEquals("renewed", storage.sessions[ACCOUNT.id]?.uid)
+        assertEquals("renewed", factory.sources.first().current?.uid)
+    }
+
+    @Test
+    fun reconnectToAnotherUserKeepsTheDriveAndRevokesTheNewLogin() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Code":1000}"""))
+        val connector = connector()
+        val store = connector.store(ACCOUNT)
+        // Same username and email, different Proton user: only the user ID counts.
+        connector.stageReconnect(ACCOUNT.id, SESSION.copy(uid = "intruder", userId = "user-z"))
+
+        val failure = failure<IllegalStateException> { connector.commitReconnect(ACCOUNT) }
+
+        assertTrue(failure.message!!.contains("same Proton account"))
+        assertEquals("intruder", server.takeRequest().getHeader("x-pm-uid"))
+        assertEquals(SESSION, storage.sessions[ACCOUNT.id])
+        assertEquals("user-a", storage.userIds[ACCOUNT.id])
+        assertSame(store, connector.store(ACCOUNT))
+        assertEquals(SESSION, factory.sources.first().current)
+        assertFalse(connector.commitReconnect(ACCOUNT))
+    }
+
+    @Test
+    fun anExpiredDriveIsStillVerifiedAfterRestart() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Code":1000}"""))
+        connector().apply { store(ACCOUNT) }
+        factory.sources.first().invalidate()
+        val restarted = connector()
+        restarted.stageReconnect(ACCOUNT.id, SESSION_B.copy(uid = "other"))
+        failure<IllegalStateException> { restarted.commitReconnect(ACCOUNT) }
+        assertNull(storage.sessions[ACCOUNT.id])
+
+        restarted.stageReconnect(ACCOUNT.id, SESSION.copy(uid = "renewed"))
+        assertTrue(restarted.commitReconnect(ACCOUNT))
+        assertEquals("renewed", storage.sessions[ACCOUNT.id]?.uid)
+        restarted.store(ACCOUNT)
+        assertEquals("renewed", factory.sources.last().current?.uid)
+    }
+
+    @Test
+    fun aFailedSaveLeavesTheOldCredentialsIntact() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Code":1000}"""))
+        val connector = connector()
+        val store = connector.store(ACCOUNT)
+        storage.saveFailure = IOException("disk full")
+        connector.stageReconnect(ACCOUNT.id, SESSION.copy(uid = "renewed"))
+
+        failure<IOException> { connector.commitReconnect(ACCOUNT) }
+
+        assertEquals("renewed", server.takeRequest().getHeader("x-pm-uid"))
+        assertEquals(SESSION, storage.sessions[ACCOUNT.id])
+        assertEquals(SESSION, factory.sources.first().current)
+        assertSame(store, connector.store(ACCOUNT))
+    }
+
+    @Test
+    fun aDriveWithoutAKnownUserIdCannotBeReconnected() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Code":1000}"""))
+        // Connected by an older version, and its session expired before the user ID was kept on its own.
+        storage.sessions.remove(ACCOUNT.id)
+        val connector = connector()
+        val early = failure<IllegalStateException> { connector.reconnectScreen(ACCOUNT) }
+        assertTrue(early.message!!.contains("Disconnect it and add it again"))
+        connector.stageReconnect(ACCOUNT.id, SESSION.copy(uid = "unverified"))
+        failure<IllegalStateException> { connector.commitReconnect(ACCOUNT) }
+        assertEquals("unverified", server.takeRequest().getHeader("x-pm-uid"))
+        assertNull(storage.sessions[ACCOUNT.id])
+    }
+
+    @Test
+    fun cancelReconnectDropsTheStagedLoginAndIsIdempotent() = runTest {
+        val connector = connector()
+        connector.cancelReconnect(ACCOUNT)
+        connector.stageReconnect(ACCOUNT.id, SESSION.copy(uid = "renewed"))
+        connector.cancelReconnect(ACCOUNT)
+        connector.cancelReconnect(ACCOUNT)
+        assertFalse(connector.commitReconnect(ACCOUNT))
+        assertEquals(SESSION, storage.sessions[ACCOUNT.id])
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun signOutAndLocalDataDeletionForgetUserIdsOfExpiredDrivesToo() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Code":1000}"""))
+        val connector = connector()
+        connector.store(ACCOUNT)
+        factory.sources.first().invalidate()
+        connector.signOut("b")
+        assertEquals(mapOf(ACCOUNT.id to "user-a"), storage.userIds)
+        connector.deleteLocalData()
+        assertTrue(storage.userIds.isEmpty())
+        assertTrue(storage.sessions.isEmpty())
+    }
+
+    private suspend inline fun <reified T : Throwable> failure(block: () -> Unit): T {
+        try {
+            block()
+        } catch (e: Throwable) {
+            if (e is T) return e
+            throw e
+        }
+        error("Expected ${T::class.simpleName}")
+    }
+
     private class MemoryStorage : ProtonAccountSessionStorage {
         val sessions = mutableMapOf(ProtonConnector.ACCOUNT_ID to SESSION, "b" to SESSION_B)
+        val userIds = mutableMapOf<String, String>()
+        var saveFailure: Exception? = null
         override fun loadAll() = sessions.toMap()
         override fun save(accountId: String, session: ProtonSession) {
+            saveFailure?.let { throw it }
             sessions[accountId] = session
         }
         override fun remove(accountId: String) {
             sessions.remove(accountId)
+        }
+        override fun userIds() = userIds.toMap()
+        override fun saveUserId(accountId: String, userId: String) {
+            userIds[accountId] = userId
+        }
+        override fun removeUserId(accountId: String) {
+            userIds.remove(accountId)
         }
     }
 

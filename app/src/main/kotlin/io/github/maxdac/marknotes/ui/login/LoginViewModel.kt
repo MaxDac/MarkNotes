@@ -22,7 +22,9 @@ data class LoginState(
 
 class LoginViewModel(
     private val proton: ProtonConnector,
-    private val diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
+    private val diagnostics: DiagnosticReporter = DiagnosticReporter.NONE,
+    /** Receives the signed-in session: a new account by default, or a staged reconnect. */
+    private val onSession: suspend (ProtonSession) -> Unit = proton::onLoggedIn
 ) : ViewModel() {
     private val _state = MutableStateFlow(LoginState())
     val state: StateFlow<LoginState> = _state
@@ -59,7 +61,7 @@ class LoginViewModel(
         }
         password = ""
         pendingSession = null
-        proton.onLoggedIn(session.copy(keyPassphrases = passphrases))
+        onSession(session.copy(keyPassphrases = passphrases))
         _state.value = _state.value.copy(done = true)
     }
 

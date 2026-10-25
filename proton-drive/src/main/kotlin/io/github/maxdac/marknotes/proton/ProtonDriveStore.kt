@@ -6,6 +6,7 @@ import io.github.maxdac.marknotes.core.sync.RemoteChangedException
 import io.github.maxdac.marknotes.core.sync.RemoteDriveStore
 import io.github.maxdac.marknotes.core.sync.RemoteEntry
 import io.github.maxdac.marknotes.core.sync.UnsupportedRemoteOperationException
+import io.github.maxdac.marknotes.sync.RemoteFolderDeletion
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -46,6 +47,9 @@ class ProtonDriveStore(
             onClose()
         }
     }
+
+    // The SDK has no atomic delete-if-empty: locally removed folders are left on the drive for the user to remove.
+    override val remoteFolderDeletion = RemoteFolderDeletion.UNSUPPORTED
 
     private var rootUid: NodeUid? = null
     private var scopeId: ScopeId? = null

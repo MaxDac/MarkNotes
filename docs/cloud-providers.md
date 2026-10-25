@@ -143,7 +143,11 @@ Proton Drive needs no app registration and no secrets on Android, web or desktop
   sessions migrate without changing the connected folder or account ID. Adding an account always opens
   the login screen, and every login creates a new account, even for a Proton user that is already
   connected: reusing that drive's ID would hand its sync records to a drive that may sync another
-  folder. When Proton revokes a session, sign in again by adding the drive again and removing the old one.
+  folder. When Proton revokes or expires a session, use **Reconnect** on the drive in Settings: the login only
+  replaces the session when it belongs to the same Proton user ID, which Pro keeps for each drive (backfilled at
+  start-up from still valid sessions). A drive connected before that whose session already expired can't be
+  verified and must be disconnected and added again. OneDrive's Reconnect signs in through MSAL and accepts only
+  the drive's MSAL account ID.
 - **Every request** sends the header `x-pm-appversion: external-drive-marknotes@0.1.0-alpha`.
 - **Login screen** shows "This is a third-party application not officially supported by Proton."
 - **No Proton branding** (logos or similar) anywhere in the apps.
@@ -158,9 +162,12 @@ followed by a potentially replacing move. Conflict copies are written privately 
 (including epoch zero) and flushed before atomic no-replace publication. Durable recovery verifies and reuses
 the same conflict-copy path and note ID after a crash; a racing edited destination is never overwritten.
 
-OneDrive and Proton Drive folder deletion is deliberately unsupported: their recursive delete/trash operations
-cannot atomically guarantee that a folder has no unseen children. Sync reports an error and keeps the folder's
-records for a later retry; it never falls back to recursive deletion. Files can still be synced individually.
+OneDrive and Proton Drive declare empty-only folder removal unsupported (`remoteFolderDeletion = UNSUPPORTED`):
+their recursive delete/trash operations cannot atomically guarantee that a folder has no unseen children. Since
+marknotes-sync 0.4.0 ([marknotes-spec#50](https://github.com/MaxDac/marknotes-spec/issues/50)) a folder deleted
+locally is kept on the drive with a single notice in Sync asking you to remove it there, instead of an error on
+every sync; it never falls back to recursive deletion, and recreating the folder locally ends the notice. Files
+can still be synced individually.
 If OneDrive cannot store the supplied edit time after an upload, that step is reported as an error rather than
 recording a successful sync with the wrong modification time.
 

@@ -36,6 +36,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.maxdac.marknotes.core.auth.ProtonSession
 import io.github.maxdac.marknotes.core.diagnostics.DiagnosticReporter
 import io.github.maxdac.marknotes.sync.ProtonConnector
 
@@ -47,9 +48,12 @@ fun LoginScreen(
     proton: ProtonConnector,
     onLoggedIn: () -> Unit,
     onBack: () -> Unit,
-    diagnostics: DiagnosticReporter = DiagnosticReporter.NONE
+    diagnostics: DiagnosticReporter = DiagnosticReporter.NONE,
+    /** Distinguishes reconnect attempts, each with a fresh login, from the add-drive login. */
+    viewModelKey: String? = null,
+    onSession: suspend (ProtonSession) -> Unit = proton::onLoggedIn
 ) {
-    val vm: LoginViewModel = viewModel { LoginViewModel(proton, diagnostics) }
+    val vm: LoginViewModel = viewModel(key = viewModelKey) { LoginViewModel(proton, diagnostics, onSession) }
     val state by vm.state.collectAsStateWithLifecycle()
     var username by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }

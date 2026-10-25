@@ -2,6 +2,7 @@ package io.github.maxdac.marknotes.proton
 
 import io.github.maxdac.marknotes.core.sync.RemoteEntry
 import io.github.maxdac.marknotes.core.sync.UnsupportedRemoteOperationException
+import io.github.maxdac.marknotes.sync.RemoteFolderDeletion
 import java.io.IOException
 import java.lang.reflect.Proxy
 import java.time.Instant
@@ -96,6 +97,7 @@ class ProtonDriveStoreTest {
 
         assertTrue(deletion is UnsupportedRemoteOperationException)
         assertTrue(rename is UnsupportedRemoteOperationException)
+        assertEquals(RemoteFolderDeletion.UNSUPPORTED, store.remoteFolderDeletion)
         assertEquals(0, sdk.calls)
     }
 

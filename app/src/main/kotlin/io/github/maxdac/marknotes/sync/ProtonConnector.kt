@@ -25,6 +25,7 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -42,6 +43,9 @@ import kotlinx.coroutines.withContext
  *
  * The SDK clients live across syncs and refresh the tokens through their account's [ProtonSessionSource] when the
  * API answers 401, so the stored session stays the only copy of the tokens.
+ *
+ * When a session expires, **Reconnect** logs in again through [reconnectScreen] and [reconnect] replaces the
+ * session under the same account ID, but only for the same Proton user ID, which is kept for each drive.
  */
 class ProtonConnector(
     private val sessionStorage: ProtonAccountSessionStorage,
@@ -88,6 +92,41 @@ class ProtonConnector(
     private val accounts: MutableMap<String, Account> =
         sessionStorage.loadAll().mapValuesTo(mutableMapOf()) { (id, session) -> Account(id, session) }
 
+    /**
+     * The immutable Proton user ID of each drive. It outlives the session, so [reconnect] can refuse a login to
+     * another Proton user; drives are never matched by email or username.
+     */
+    private val userIds = ConcurrentHashMap<String, String>()
+
+    /** Sessions logged in by a [reconnectScreen], until [reconnect] commits or [cancelReconnect] drops them. */
+    private val staged = ConcurrentHashMap<String, ProtonSession>()
+
+    init {
+        try {
+            userIds.putAll(sessionStorage.userIds())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            diagnostics.report(DiagnosticCode.AUTHENTICATION, e)
+        }
+        // Drives connected before user IDs were kept on their own: their still valid session names the user.
+        accounts.forEach { (id, account) ->
+            val userId = account.current?.userId.orEmpty()
+            if (userId.isNotBlank() && userIds.putIfAbsent(id, userId) == null) backfillUserId(id, userId)
+        }
+    }
+
+    private fun backfillUserId(id: String, userId: String) {
+        try {
+            sessionStorage.saveUserId(id, userId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Kept in memory; the next start retries while the session is still valid.
+            diagnostics.report(DiagnosticCode.AUTHENTICATION, e)
+        }
+    }
+
     /** The account the login screen saved, until [signIn] returns it. */
     @Volatile
     private var signedInId: String? = null
@@ -117,7 +156,23 @@ class ProtonConnector(
             }
         }
         val id = "proton-${UUID.randomUUID()}"
-        sessionStorage.save(id, session)
+        // The user ID first: a saved session must always be verifiable by a later reconnect.
+        if (session.userId.isNotBlank()) sessionStorage.saveUserId(id, session.userId)
+        try {
+            sessionStorage.save(id, session)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (session.userId.isNotBlank()) {
+                try {
+                    sessionStorage.removeUserId(id)
+                } catch (suppressed: Exception) {
+                    e.addSuppressed(suppressed)
+                }
+            }
+            throw e
+        }
+        if (session.userId.isNotBlank()) userIds[id] = session.userId
         accounts[id] = Account(id, session)
         signedInId = id
     }
@@ -130,6 +185,78 @@ class ProtonConnector(
         val session = accounts[id]?.current ?: return@withLock null
         SignedInAccount(id, provider, session.username.ifBlank { provider.displayName })
     }
+
+    override val supportsReconnect = true
+
+    /**
+     * The login screen for [account]: it only stages the new session, which [reconnect] then verifies and commits.
+     * Fails right away for a drive whose Proton user can't be verified.
+     */
+    override fun reconnectScreen(account: DriveAccount): SignInScreen {
+        require(account.provider == provider)
+        unavailableReason?.let { throw RemoteUnavailableException(it) }
+        expectedUserId(account.id)
+        val key = "proton-reconnect-${UUID.randomUUID()}"
+        return { onDone, onBack ->
+            LoginScreen(
+                this,
+                onLoggedIn = onDone,
+                onBack = onBack,
+                diagnostics = diagnostics,
+                viewModelKey = key,
+                onSession = { stageReconnect(account.id, it) }
+            )
+        }
+    }
+
+    /** Keeps [session] for [accountId] until [reconnect]; the connected session stays as it is. */
+    fun stageReconnect(accountId: String, session: ProtonSession) {
+        staged[accountId] = session
+    }
+
+    /** Drops the staged login without revoking it (no network here): the server expires it on its own. */
+    override fun cancelReconnect(account: DriveAccount) {
+        staged.remove(account.id)
+    }
+
+    override suspend fun reconnect(activity: ComponentActivity, account: DriveAccount): Boolean =
+        commitReconnect(account)
+
+    /**
+     * Replaces [account]'s session with the staged one when both belong to the same Proton user, keeping the
+     * account ID, its sync records and folder. Returns false when nothing was staged (the login was left).
+     */
+    internal suspend fun commitReconnect(account: DriveAccount): Boolean {
+        require(account.provider == provider)
+        val session = staged.remove(account.id) ?: return false
+        val replaced = try {
+            storeLock.withLock {
+                // Checked under the lock, so the drive can't be signed out in between.
+                check(session.userId.isNotBlank() && session.userId == expectedUserId(account.id)) { WRONG_ACCOUNT }
+                sessionStorage.save(account.id, session)
+                val owner = accounts.getOrPut(account.id) { Account(account.id, session) }
+                owner.refreshLock.withLock {
+                    val previous = owner.current
+                    owner.current = session
+                    // The next store() closes the old clients and creates new ones with the new session.
+                    owner.retire()
+                    previous?.takeIf { it != session }
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Nothing was stored: the drive keeps its current session, and the unused login is revoked.
+            revoke(session)
+            throw e
+        }
+        // The old session still worked (a reconnect without expiry): it isn't used anymore.
+        replaced?.let { revoke(it) }
+        return true
+    }
+
+    private fun expectedUserId(accountId: String): String =
+        userIds[accountId]?.takeIf { it.isNotBlank() } ?: throw IllegalStateException(UNVERIFIABLE_ACCOUNT)
 
     override suspend fun folderBrowser(accountId: String): RemoteFolderBrowser? = null
 
@@ -174,7 +301,8 @@ class ProtonConnector(
     /** Every drive was signed out already: this removes the logins never saved as drives, and the whole cache. */
     override suspend fun deleteLocalData() = storeLock.withLock {
         val failures = mutableListOf<Exception>()
-        for (id in accounts.keys.toList()) {
+        // User IDs of drives whose session expired are left too.
+        for (id in (accounts.keys + userIds.keys).toList()) {
             try {
                 removeAccount(id)
             } catch (e: CancellationException) {
@@ -207,7 +335,10 @@ class ProtonConnector(
         }
         sessionStorage.remove(id)
         accounts.remove(id)
+        staged.remove(id)
         if (signedInId == id) signedInId = null
+        sessionStorage.removeUserId(id)
+        userIds.remove(id)
         if (account?.closeRetired() == false) throw IOException("Could not close the Proton Drive cache")
         deleteCache(id)
     }
@@ -315,8 +446,13 @@ class ProtonConnector(
 
     companion object {
         const val ACCOUNT_ID = MarkNotesDatabase.LEGACY_PROTON_ID
-        private const val LOGIN_AGAIN = "Log in to Proton Drive again"
-        private const val SESSION_EXPIRED = "Proton session expired, please log in again"
+        private const val LOGIN_AGAIN = "Proton Drive is signed out. Use Reconnect in Settings to log in again"
+        private const val SESSION_EXPIRED = "Proton session expired. Use Reconnect in Settings to log in again"
+        private const val WRONG_ACCOUNT =
+            "Log in to the same Proton account as this drive. The drive and its sync history have been kept."
+        private const val UNVERIFIABLE_ACCOUNT =
+            "Cannot safely reconnect this Proton Drive drive: it was connected by an older version and its " +
+                "session has expired, so its Proton account can't be verified. Disconnect it and add it again."
         private val LEGACY_CACHE_FILES = listOf("cache.sqlite", "cache.sqlite-wal", "cache.sqlite-shm")
 
         /** An account's SDK cache directory, named by a hash so account IDs never form paths. */
