@@ -135,8 +135,12 @@ jobs:
         with:
           submodules: true
       - uses: ./.github/actions/setup-android-build
-      - name: Assemble debug
-        run: ./gradlew assembleDebug
+      - name: Test the APK permission guard
+        run: bash scripts/test-check-apk-permissions.sh
+      - name: Assemble debug and release
+        run: ./gradlew assembleDebug :app:assembleRelease
+      - name: Check Pro debug and release APK permissions
+        run: bash scripts/check-apk-permissions.sh app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release-unsigned.apk
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
         with:

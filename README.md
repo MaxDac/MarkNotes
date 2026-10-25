@@ -137,6 +137,8 @@ The Gradle wrapper (9.8.1, AGP 9.4 with built-in Kotlin 2.4) is included:
 
 ```sh
 ./gradlew assembleDebug                      # build the debug APK
+./gradlew :app:assembleRelease               # build the unsigned release APK (without signing env vars)
+bash scripts/check-apk-permissions.sh app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release-unsigned.apk
 ./gradlew ktlintCheck detekt lintDebug       # ktlint, detekt and Android Lint (ktlintFormat auto-fixes style)
 ./gradlew testDebugUnitTest :core:test :pro-core:test # unit tests (both plain JVM modules explicitly)
 ./gradlew :core:parityTest                   # marknotes-spec fixtures (needs libre/spec)
@@ -149,6 +151,15 @@ checks, "Lint (ktlint, detekt, Android Lint)", "Unit tests", "Instrumented tests
 fixtures)", checks out the `libre/spec` submodule and runs every [marknotes-spec](https://github.com/MaxDac/marknotes-spec)
 golden fixture against the real implementation (`./gradlew :core:parityTest` and the `:app-shared` mention test;
 see AGENTS.md, "Cross-app parity").
+
+The existing "Build debug APK" check also builds the unsigned Pro release APK and checks both APKs' merged
+permissions. The allowlist is `INTERNET`, `ACCESS_NETWORK_STATE` (cloud providers), `NFC` (MSAL's YubiKit
+dependency), `USE_BIOMETRIC` (app lock), and
+`io.github.maxdac.marknotes.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (AndroidX internal receivers).
+Any addition, including implicit phone or storage permissions from a dependency missing `uses-sdk`, fails
+the check. Releases check the signed APK against the same list before publishing. Run the script with
+`ANDROID_HOME`/`ANDROID_SDK_ROOT` set, or set `AAPT2` to the SDK's `aapt2` executable.
+
 `pr-ci.yml` runs them on every pull request, and `main-ci.yml` reruns them on `main` and builds an unsigned
 release APK. All jobs run on `ubuntu-24.04`, like the desktop and web repos. Pull requests also run
 "Dependency review" (fails on high-severity vulnerabilities in added dependencies and comments a summary on
