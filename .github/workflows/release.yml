@@ -48,6 +48,7 @@ jobs:
             echo "::error::Release requires published, reviewed marknotes-sync artifacts; the development source pin is still present."
             exit 1
           fi
+          python3 libre/scripts/sync-contract.py --release --verification-root .
       - name: Validate version and tag
         id: version
         env:

@@ -33,3 +33,6 @@ jobs:
         with:
           setup-gradle: "false"
       - uses: gradle/actions/dependency-submission@v6
+        with:
+          # The action disables dependency verification by default; the shared sync settings reject that in CI.
+          additional-arguments: --dependency-verification strict
