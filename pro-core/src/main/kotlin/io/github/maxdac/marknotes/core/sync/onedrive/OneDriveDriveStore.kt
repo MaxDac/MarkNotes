@@ -8,6 +8,7 @@ import io.github.maxdac.marknotes.core.sync.RemoteFolder
 import io.github.maxdac.marknotes.core.sync.RemoteFolderBrowser
 import io.github.maxdac.marknotes.core.sync.SyncManifest
 import io.github.maxdac.marknotes.core.sync.UnsupportedRemoteOperationException
+import io.github.maxdac.marknotes.sync.foldCase
 import java.io.IOException
 import java.net.URLEncoder
 import java.time.Instant
@@ -248,17 +249,16 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
 
     @Suppress("ThrowsCount")
     override suspend fun rename(entry: RemoteEntry, toPath: String): RemoteEntry {
-        if (entry.isFolder) {
-            throw UnsupportedRemoteOperationException("Safe folder rename is not supported by OneDrive: ${entry.path}")
-        }
         val target = NotePaths.normalize(toPath)
-        require(NotePaths.parent(entry.path) == NotePaths.parent(target)) { "A rename cannot change the parent folder" }
+        validateRenameTarget(entry, target)
         val cached = byId[entry.id]
         if (cached == null || cached.entry != entry || cached.eTag.isEmpty()) throw RemoteChangedException(entry.path)
         val body = buildJsonObject {
             put("name", NotePaths.name(target))
-            putJsonObject("fileSystemInfo") {
-                put("lastModifiedDateTime", Instant.ofEpochMilli(entry.modifiedMillis).toString())
+            if (!entry.isFolder) {
+                putJsonObject("fileSystemInfo") {
+                    put("lastModifiedDateTime", Instant.ofEpochMilli(entry.modifiedMillis).toString())
+                }
             }
         }
         val item = try {
@@ -271,16 +271,39 @@ class OneDriveDriveStore(private val graph: GraphClient, syncFolder: String) : R
             if (e.httpStatus == HTTP_PRECONDITION_FAILED) throw RemoteChangedException(entry.path)
             throw e
         }
-        val sameFile = item.string("id") == entry.id &&
-            item.string("name") == NotePaths.name(target) && item.obj("file") != null
-        if (!sameFile) {
-            throw IOException("OneDrive returned an unexpected renamed file: ${entry.path}")
+        if (!isRenamedItem(item, entry, target)) {
+            deltaLink = null
+            val kind = if (entry.isFolder) "folder" else "file"
+            throw IOException("OneDrive returned an unexpected renamed $kind: ${entry.path}")
         }
+        if (entry.isFolder) renameTree(entry.path, target)
         val renamed = remember(item, target)
-        if (renamed.modifiedMillis != entry.modifiedMillis) {
+        if (!entry.isFolder && renamed.modifiedMillis != entry.modifiedMillis) {
             throw IOException("OneDrive did not preserve the edit time during rename: ${entry.path}")
         }
         return renamed
+    }
+
+    private fun validateRenameTarget(entry: RemoteEntry, target: String) {
+        val sameParent = NotePaths.parent(entry.path) == NotePaths.parent(target)
+        if (entry.isFolder) {
+            val caseOnly = entry.path != target && foldCase(entry.path) == foldCase(target)
+            if (!sameParent || !caseOnly) {
+                throw UnsupportedRemoteOperationException(
+                    "Only same-parent case-only folder renames are supported by OneDrive: ${entry.path}"
+                )
+            }
+        }
+        require(sameParent) { "A rename cannot change the parent folder" }
+    }
+
+    private fun isRenamedItem(item: JsonObject, entry: RemoteEntry, target: String): Boolean {
+        val sameKind = if (entry.isFolder) {
+            item.obj("folder") != null && item.obj("file") == null
+        } else {
+            item.obj("file") != null && item.obj("folder") == null
+        }
+        return sameKind && item.string("id") == entry.id && item.string("name") == NotePaths.name(target)
     }
 
     override suspend fun readManifest(): ByteArray? = try {
