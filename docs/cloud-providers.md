@@ -164,13 +164,15 @@ records for a later retry; it never falls back to recursive deletion. Files can 
 If OneDrive cannot store the supplied edit time after an upload, that step is reported as an error rather than
 recording a successful sync with the wrong modification time.
 
-OneDrive file case-only renames use the stable item ID, the listing's eTag in
+OneDrive file and same-parent folder case-only renames use the stable item ID, the listing's eTag in
 [`If-Match`](https://learn.microsoft.com/en-us/graph/api/driveitem-update?view=graph-rest-1.0#request-headers), and
 [`@microsoft.graph.conflictBehavior=fail`](https://learn.microsoft.com/en-us/graph/api/resources/driveitem?view=graph-rest-1.0#instance-attributes):
-a racing edit or name conflict fails without replacing another file.
+a racing edit or name conflict fails without replacing another entry.
 The same conditional update preserves the file's edit time; an unexpected identity or timestamp is an error.
-Remote folder case-only renames and Proton Drive remote renames report an unsupported-operation error rather
-than moving entries without a conditional identity/content guarantee.
+Folder rename responses must preserve the folder kind and exact requested name, and cached descendants move
+with the folder even when the next delta is empty. Folder timestamps are not stamped as file edit times.
+Other OneDrive folder renames, moves, and Proton Drive remote renames report an unsupported-operation error
+rather than moving entries without a conditional identity/content guarantee.
 
 ## Development sync source builds
 

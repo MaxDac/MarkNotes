@@ -4,7 +4,6 @@ import io.github.maxdac.marknotes.core.notes.LocalNoteStore
 import io.github.maxdac.marknotes.core.sync.Hashing
 import io.github.maxdac.marknotes.core.sync.InMemorySyncMetadataStore
 import io.github.maxdac.marknotes.core.sync.RemoteChangedException
-import io.github.maxdac.marknotes.core.sync.RemoteEntry
 import io.github.maxdac.marknotes.core.sync.SyncEngine
 import io.github.maxdac.marknotes.core.sync.SyncRecord
 import io.github.maxdac.marknotes.core.sync.UnsupportedRemoteOperationException
@@ -66,8 +65,8 @@ class OneDriveDriveStoreTest {
         routes[key] = { MockResponse().setResponseCode(code).setBody(body) }
     }
 
-    private fun folder(id: String, name: String, parent: String) =
-        """{"id":"$id","name":"$name","folder":{"childCount":0},"parentReference":{"id":"$parent"},""" +
+    private fun folder(id: String, name: String, parent: String, eTag: String = "e-$id") =
+        """{"id":"$id","name":"$name","folder":{"childCount":0},"eTag":"$eTag","parentReference":{"id":"$parent"},""" +
             """"lastModifiedDateTime":"2024-01-01T00:00:00Z"}"""
 
     private fun file(id: String, name: String, parent: String, cTag: String, modifiedMillis: Long? = null) =
@@ -341,15 +340,238 @@ class OneDriveDriveStoreTest {
     }
 
     @Test
-    fun aFolderRenameFailsWithoutATreeGuardOrProviderCall() = runTest {
+    fun caseOnlyFolderRenameMigratesTheCachedSubtreeEvenWithAnEmptyDelta() = runTest {
+        route(
+            "GET /v1.0/me/drive/items/f1/children",
+            """{"value":[${folder("nested", "Nested", "f1")},${file("hidden", ".private", "f1", "c3")}]}"""
+        )
+        route(
+            "GET /v1.0/me/drive/items/nested/children",
+            """{"value":[${file("n2", "Plan.md", "nested", "c2")},${file("bin", "data.bin", "nested", "c4")}]}"""
+        )
+        val entries = store.snapshot().associateBy { it.path }
+        route(
+            "PATCH /v1.0/me/drive/items/f1?@microsoft.graph.conflictBehavior=fail",
+            folder("f1", "WORK", "root", "e-renamed")
+                .replace("2024-01-01T00:00:00Z", "2026-10-24T00:00:00Z")
+        )
         val before = requests.size
 
-        val error = runCatching {
-            store.rename(RemoteEntry("Work", "folder", true, "", 0L), "WORK")
-        }.exceptionOrNull()
+        val renamed = store.rename(entries.getValue("Work"), "WORK")
 
-        assertTrue(error is UnsupportedRemoteOperationException)
+        assertEquals("f1", renamed.id)
+        assertEquals("WORK", renamed.path)
+        assertTrue(renamed.isFolder)
+        assertEquals("", renamed.version)
+        assertEquals(before + 1, requests.size)
+        assertEquals("e-f1", requests.last().getHeader("If-Match"))
+        assertEquals("""{"name":"WORK"}""", requests.last().body.readUtf8())
+        route("GET /v1.0/delta1", """{"value":[],"@odata.deltaLink":"$base/delta2"}""")
+        val updated = store.snapshot().associateBy { it.path }
+        val expected = entries.values.map {
+            if (it.path == "Work" || it.path.startsWith("Work/")) {
+                if (it.id == "f1") renamed else it.copy(path = "WORK" + it.path.removePrefix("Work"))
+            } else {
+                it
+            }
+        }.associateBy { it.path }
+        assertEquals(expected, updated)
+        route(
+            "PATCH /v1.0/me/drive/items/nested?@microsoft.graph.conflictBehavior=fail",
+            folder("nested", "NESTED", "f1")
+        )
+        store.rename(updated.getValue("WORK/Nested"), "WORK/NESTED")
+        assertEquals("e-nested", requests.last().getHeader("If-Match"))
+        route("GET /v1.0/delta2", """{"value":[],"@odata.deltaLink":"$base/delta3"}""")
+        assertEquals(
+            setOf("WORK", "WORK/NESTED", "WORK/NESTED/Plan.md", "WORK/NESTED/data.bin", "WORK/.private", "Todo.md"),
+            store.snapshot().map { it.path }.toSet()
+        )
+    }
+
+    @Test
+    fun sharedExecutorMigratesFolderAndChildRecordsWithoutContentMutations() = runTest {
+        route("GET /v1.0/me/drive/items/root/children", """{"value":[${folder("f1", "Work", "root")}]}""")
+        route("GET /v1.0/delta1", """{"value":[],"@odata.deltaLink":"$base/delta1"}""")
+        route(
+            "PATCH /v1.0/me/drive/items/f1?@microsoft.graph.conflictBehavior=fail",
+            folder("f1", "WORK", "root")
+        )
+        route("PUT /v1.0/me/drive/items/root:/.marknotes/manifest.json:/content", "{}")
+        val local = LocalNoteStore(temporary.newFolder())
+        val bytes = "unchanged child\n".toByteArray()
+        local.createFolder("WORK")
+        local.writeBytes("WORK/Plan.md", bytes, 1000L)
+        val metadata = InMemorySyncMetadataStore()
+        metadata.upsert(SyncRecord("Work", true, "f1", "", "", 0L))
+        metadata.upsert(SyncRecord("Work/Plan.md", false, "n2", "c2", Hashing.sha256Hex(bytes), 0L))
+
+        val result = SyncEngine(local, store, metadata).sync()
+
+        assertEquals(emptyList<String>(), result.errors)
+        val records = metadata.all().associateBy { it.path }
+        assertEquals(setOf("WORK", "WORK/Plan.md"), records.keys)
+        assertEquals("f1", records.getValue("WORK").remoteId)
+        assertEquals("n2", records.getValue("WORK/Plan.md").remoteId)
+        assertEquals("c2", records.getValue("WORK/Plan.md").remoteVersion)
+        assertEquals(Hashing.sha256Hex(bytes), records.getValue("WORK/Plan.md").localHash)
+        assertEquals("unchanged child\n", local.read("WORK/Plan.md"))
+        assertEquals(1, requests.count { it.method == "PATCH" })
+        assertEquals(
+            0,
+            requests.count {
+                it.method == "DELETE" ||
+                    (it.path!!.endsWith("/content") && !it.path!!.contains("/.marknotes/manifest.json:"))
+            }
+        )
+        assertEquals(0, result.uploaded + result.downloaded + result.deletedLocal + result.deletedRemote)
+    }
+
+    @Test
+    fun anEmptyFolderCaseRenameUsesUnicodeSimpleFoldingAndTheUpdatedEtag() = runTest {
+        route("GET /v1.0/me/drive/items/root/children", """{"value":[${folder("f1", "S", "root")}]}""")
+        route("GET /v1.0/me/drive/items/f1/children", """{"value":[]}""")
+        val entry = store.snapshot().single()
+        route(
+            "PATCH /v1.0/me/drive/items/f1?@microsoft.graph.conflictBehavior=fail",
+            folder("f1", "\u017f", "root", "e-renamed")
+        )
+
+        val renamed = store.rename(entry, "\u017f")
+
+        assertEquals("\u017f", renamed.path)
+        assertTrue(renamed.isFolder)
+        route(
+            "PATCH /v1.0/me/drive/items/f1?@microsoft.graph.conflictBehavior=fail",
+            folder("f1", "s", "root")
+        )
+        store.rename(renamed, "s")
+        assertEquals("e-renamed", requests.last().getHeader("If-Match"))
+    }
+
+    @Test
+    fun sharedExecutorRetainsFolderAndChildRecordsWhenTheFolderRenameFails() = runTest {
+        route("GET /v1.0/me/drive/items/root/children", """{"value":[${folder("f1", "Work", "root")}]}""")
+        route("GET /v1.0/delta1", """{"value":[],"@odata.deltaLink":"$base/delta1"}""")
+        route("PUT /v1.0/me/drive/items/root:/.marknotes/manifest.json:/content", "{}")
+        for (status in listOf(412, 409)) {
+            route(
+                "PATCH /v1.0/me/drive/items/f1?@microsoft.graph.conflictBehavior=fail",
+                """{"error":{"message":"conflict"}}""",
+                status
+            )
+            val local = LocalNoteStore(temporary.newFolder())
+            val bytes = "unchanged child\n".toByteArray()
+            local.createFolder("WORK")
+            local.writeBytes("WORK/Plan.md", bytes, 1000L)
+            val metadata = InMemorySyncMetadataStore()
+            metadata.upsert(SyncRecord("Work", true, "f1", "", "", 0L))
+            metadata.upsert(SyncRecord("Work/Plan.md", false, "n2", "c2", Hashing.sha256Hex(bytes), 0L))
+            val before = metadata.all()
+            val requestCount = requests.size
+
+            val result = SyncEngine(local, store, metadata).sync()
+
+            assertEquals(1, result.errors.size)
+            assertEquals(before.map { it.copy(localDeleted = !it.isFolder) }, metadata.all())
+            assertEquals("unchanged child\n", local.read("WORK/Plan.md"))
+            assertEquals(1, requests.drop(requestCount).count { it.method == "PATCH" })
+            assertEquals(
+                0,
+                requests.drop(requestCount).count {
+                    it.method == "DELETE" || (it.method == "PUT" && !it.path!!.contains("/.marknotes/manifest.json:"))
+                }
+            )
+            assertEquals(0, result.uploaded + result.downloaded + result.deletedLocal + result.deletedRemote)
+        }
+    }
+
+    @Test
+    fun arbitraryFolderRenamesMovesAndNoOpsFailBeforeMutation() = runTest {
+        val entry = store.snapshot().first { it.path == "Work" }
+        val before = requests.size
+
+        for (target in listOf("Projects", "Other/WORK", "WORK/Work", "Work")) {
+            val error = runCatching { store.rename(entry, target) }.exceptionOrNull()
+
+            assertTrue("$target: $error", error is UnsupportedRemoteOperationException)
+        }
         assertEquals(before, requests.size)
+    }
+
+    @Test
+    fun folderRenamesRequireTheExactListedIdentityAndEtag() = runTest {
+        val entry = store.snapshot().first { it.path == "Work" }
+        val before = requests.size
+        for (stale in listOf(
+            entry.copy(id = "missing"),
+            entry.copy(modifiedMillis = 0),
+            entry.copy(version = "other")
+        )) {
+            val error = runCatching { store.rename(stale, "WORK") }.exceptionOrNull()
+            assertTrue(error is RemoteChangedException)
+        }
+        assertEquals(before, requests.size)
+        route(
+            "GET /v1.0/delta1",
+            """{"value":[${folder("f1", "Work", "root", "")}],"@odata.deltaLink":"$base/delta2"}"""
+        )
+        val unguarded = store.snapshot().first { it.path == "Work" }
+        val afterListing = requests.size
+
+        val error = runCatching { store.rename(unguarded, "WORK") }.exceptionOrNull()
+
+        assertTrue(error is RemoteChangedException)
+        assertEquals(afterListing, requests.size)
+    }
+
+    @Test
+    fun folderRenamePreconditionAndDestinationConflictsPreserveTheSubtreeWithoutRetries() = runTest {
+        val entries = store.snapshot()
+        val entry = entries.first { it.path == "Work" }
+        for (status in listOf(412, 409)) {
+            route(
+                "PATCH /v1.0/me/drive/items/f1?@microsoft.graph.conflictBehavior=fail",
+                """{"error":{"message":"conflict"}}""",
+                status
+            )
+            val before = requests.size
+
+            val error = runCatching { store.rename(entry, "WORK") }.exceptionOrNull()
+
+            val expected = when (status) {
+                412 -> error is RemoteChangedException
+                else -> error is GraphException && error.httpStatus == 409
+            }
+            assertTrue("$status: $error", expected)
+            assertEquals(before + 1, requests.size)
+            assertEquals("e-f1", requests.last().getHeader("If-Match"))
+            route("GET /v1.0/delta1", """{"value":[],"@odata.deltaLink":"$base/delta1"}""")
+            assertEquals(entries, store.snapshot())
+        }
+    }
+
+    @Test
+    fun aFolderRenameRejectsUnexpectedIdentityNameOrKindAndRefreshesTheListing() = runTest {
+        var entries = store.snapshot()
+        for (response in listOf(
+            folder("other", "WORK", "root"),
+            folder("f1", "Work (1)", "root"),
+            file("f1", "WORK", "root", "c1"),
+            """{"id":"f1","name":"WORK"}"""
+        )) {
+            route("PATCH /v1.0/me/drive/items/f1?@microsoft.graph.conflictBehavior=fail", response)
+            val before = requests.size
+
+            val error = runCatching { store.rename(entries.first { it.path == "Work" }, "WORK") }.exceptionOrNull()
+
+            assertTrue(error is IOException)
+            assertTrue(error!!.message!!.contains("unexpected renamed folder"))
+            assertEquals(before + 1, requests.size)
+            entries = store.snapshot()
+            assertEquals(setOf("Work", "Work/Plan.md", "Todo.md"), entries.map { it.path }.toSet())
+            assertTrue(requests.drop(before + 1).any { it.path == "/v1.0/me/drive/items/root/children" })
+        }
     }
 
     @Test
